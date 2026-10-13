@@ -43,6 +43,7 @@ pub mod cjk_fonts;
 pub mod clip_line_ui;
 pub mod color_picker_ui;
 pub mod color_range_ui;
+pub mod comfyui_ui;
 pub mod comps_ui;
 pub mod control;
 pub mod credits;
@@ -670,6 +671,7 @@ impl PhotocraftApp {
         };
         // Saved preferences are in place before the first frame; recovery starts in upkeep.
         prefs_ui::load(&mut app);
+        comfyui_ui::restore(&mut app);
         // After the saved preferences and their revision mark, so the imported set is saved.
         kys_import::auto_import(&mut app);
         notices::wayland_file_drop_guidance(&mut app);
@@ -1370,6 +1372,7 @@ impl eframe::App for PhotocraftApp {
         workspace_ui::windows(self, &ctx);
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        comfyui_ui::show(self, &ctx);
         jobs_ui::dialog(self, &ctx);
         discard_ui::show(self, &ctx);
         tiff_options_ui::show(self, &ctx);

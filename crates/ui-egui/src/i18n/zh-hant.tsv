@@ -2356,3 +2356,40 @@ fontWeight	Italic	斜體
 	Quick Selection found nothing there	快速選取在該處找不到任何內容
 	Object Selection found nothing there — try a tighter rectangle	物件選取在該處找不到任何內容 — 請嘗試更緊密的矩形
 	No subject found — try a rectangle around the object	找不到主體 — 請嘗試在物件周圍繪製矩形
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI 產生 / 編輯…
+	ComfyUI Generate / Edit	ComfyUI 產生 / 編輯
+	ComfyUI server	ComfyUI 伺服器
+	Prompt	提示詞
+	Negative prompt	負面提示詞
+	Checkpoint (blank uses workflow default)	檢查點（留空使用工作流程預設值）
+	Steps	步數
+	Guidance	引導強度
+	Edit strength	編輯強度
+	Width / Height	寬度 / 高度
+	Custom model workflow	自訂模型工作流程
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	在 ComfyUI 中匯出 API 格式。將提示詞、影像和遮色片繫結到節點輸入。
+	Load API Workflow…	載入 API 工作流程…
+	API workflow JSON	API 工作流程 JSON
+	Official ComfyUI workflows	ComfyUI 官方工作流程
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	影像以 8 位元 sRGB PNG 傳送。結果會成為新圖層。
+	Save Starter Workflow…	儲存入門工作流程…
+	Check Availability	檢查可用性
+	Generate / Edit	產生 / 編輯
+	Select the area to edit in PhotoCraft first.	請先在 PhotoCraft 中選取要編輯的區域。
+	Generate from text	從文字產生
+	Edit image	編輯影像
+	Edit selection	編輯選取範圍
+	Seed	隨機種子
+	Setup	設定
+	Model filenames (blank uses preset default)	模型檔案名稱（留空使用預設值）
+	Diffusion model	擴散模型
+	Text encoder	文字編碼器
+	Custom workflow overrides the model preset.	自訂工作流程覆蓋模型預設。
+	An active selection limits where the edit is applied.	?????????????????????
+	Surrounding pixels	周圍像素
+	Maximum processing side	最大處理邊長
+	Diffusers model folder	Diffusers 模型資料夾
+	Context / processing (padding removed after edit)	上下文 / 處理尺寸（編輯後移除填補）
+	ControlNet	ControlNet

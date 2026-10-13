@@ -3402,3 +3402,39 @@ cameraRaw	Roughness	Chropowatość
 	Quick Selection found nothing there	Szybkie zaznaczanie nic tam nie znalazło
 	Object Selection found nothing there — try a tighter rectangle	Zaznaczanie obiektu nic tam nie znalazło — spróbuj ciaśniejszego prostokąta
 	No subject found — try a rectangle around the object	Nie znaleziono obiektu — spróbuj prostokąta wokół obiektu
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Generuj / Edytuj…
+	ComfyUI Generate / Edit	ComfyUI Generuj / Edytuj
+	ComfyUI server	Serwer ComfyUI
+	Prompt	Prompt
+	Negative prompt	Prompt negatywny
+	Checkpoint (blank uses workflow default)	Checkpoint (puste pole używa domyślnej wartości workflow)
+	Steps	Kroki
+	Guidance	Siła wskazówek
+	Edit strength	Siła edycji
+	Width / Height	Szerokość / Wysokość
+	Custom model workflow	Workflow własnego modelu
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Wyeksportuj format API w ComfyUI. Powiąż prompt, obraz i maskę z wejściami węzłów.
+	Load API Workflow…	Wczytaj workflow API…
+	API workflow JSON	JSON workflow API
+	Official ComfyUI workflows	Oficjalne workflow ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Obrazy są wysyłane jako 8-bitowe PNG sRGB. Wyniki są dodawane jako nowe warstwy.
+	Save Starter Workflow…	Zapisz początkowy workflow…
+	Check Availability	Sprawdź dostępność
+	Generate / Edit	Generuj / Edytuj
+	Select the area to edit in PhotoCraft first.	Najpierw zaznacz obszar do edycji w PhotoCraft.
+	Generate from text	Generuj z tekstu
+	Edit image	Edytuj obraz
+	Edit selection	Edytuj zaznaczenie
+	Setup	Konfiguracja
+	Model filenames (blank uses preset default)	Pliki modeli (puste używają wartości domyślnych)
+	Diffusion model	Model dyfuzyjny
+	Text encoder	Enkoder tekstu
+	Custom workflow overrides the model preset.	Własny przepływ zastępuje ustawienie modelu.
+	An active selection limits where the edit is applied.	Aktywne zaznaczenie ogranicza obszar zastosowania edycji.
+	Surrounding pixels	Otaczające piksele
+	Maximum processing side	Maksymalny wymiar przetwarzania
+	Diffusers model folder	Folder modelu Diffusers
+	Context / processing (padding removed after edit)	Kontekst / przetwarzanie (dopełnienie jest usuwane po edycji)
+	ControlNet	ControlNet

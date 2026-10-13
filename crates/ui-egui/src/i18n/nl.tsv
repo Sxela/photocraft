@@ -3562,3 +3562,39 @@ cameraRaw	Whites	Witten
 	Quick Selection found nothing there	Snelle selectie heeft daar niets gevonden
 	Object Selection found nothing there — try a tighter rectangle	Objectselectie heeft daar niets gevonden — probeer een krappere rechthoek
 	No subject found — try a rectangle around the object	Geen onderwerp gevonden — probeer een rechthoek rond het object
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Genereren / Bewerken…
+	ComfyUI Generate / Edit	ComfyUI Genereren / Bewerken
+	ComfyUI server	ComfyUI-server
+	Prompt	Prompt
+	Negative prompt	Negatieve prompt
+	Checkpoint (blank uses workflow default)	Checkpoint (leeg gebruikt de workflowstandaard)
+	Steps	Stappen
+	Guidance	Sturing
+	Edit strength	Bewerkingssterkte
+	Width / Height	Breedte / Hoogte
+	Custom model workflow	Workflow voor een eigen model
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Exporteer het API-formaat in ComfyUI. Koppel de prompt, afbeelding en het masker aan node-invoer.
+	Load API Workflow…	API-workflow laden…
+	API workflow JSON	API-workflow-JSON
+	Official ComfyUI workflows	Officiële ComfyUI-workflows
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Afbeeldingen worden als 8-bits sRGB-PNG verzonden. Resultaten worden nieuwe lagen.
+	Save Starter Workflow…	Startworkflow opslaan…
+	Check Availability	Beschikbaarheid controleren
+	Generate / Edit	Genereren / Bewerken
+	Select the area to edit in PhotoCraft first.	Selecteer eerst het te bewerken gebied in PhotoCraft.
+	Generate from text	Genereren uit tekst
+	Edit image	Afbeelding bewerken
+	Edit selection	Selectie bewerken
+	Setup	Instellen
+	Model filenames (blank uses preset default)	Modelbestanden (leeg gebruikt standaardwaarden)
+	Diffusion model	Diffusiemodel
+	Text encoder	Tekstencoder
+	Custom workflow overrides the model preset.	De aangepaste workflow vervangt de modelvoorinstelling.
+	An active selection limits where the edit is applied.	Een actieve selectie beperkt waar de bewerking wordt toegepast.
+	Surrounding pixels	Omringende pixels
+	Maximum processing side	Maximale verwerkingsafmeting
+	Diffusers model folder	Diffusers-modelmap
+	Context / processing (padding removed after edit)	Context / verwerking (opvulling wordt na de bewerking verwijderd)
+	ControlNet	ControlNet

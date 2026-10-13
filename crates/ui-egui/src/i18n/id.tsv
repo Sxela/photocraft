@@ -2787,3 +2787,40 @@ fontWeight	Italic	Miring
 	Quick Selection found nothing there	Seleksi Cepat tidak menemukan apa pun di sana
 	Object Selection found nothing there — try a tighter rectangle	Seleksi Objek tidak menemukan apa pun di sana — coba persegi panjang yang lebih rapat
 	No subject found — try a rectangle around the object	Subjek tidak ditemukan — coba persegi panjang di sekitar objek
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Buat / Edit…
+	ComfyUI Generate / Edit	ComfyUI Buat / Edit
+	ComfyUI server	Server ComfyUI
+	Prompt	Prompt
+	Negative prompt	Prompt negatif
+	Checkpoint (blank uses workflow default)	Checkpoint (kosong memakai bawaan alur kerja)
+	Steps	Langkah
+	Guidance	Panduan
+	Edit strength	Kekuatan edit
+	Width / Height	Lebar / Tinggi
+	Custom model workflow	Alur kerja model khusus
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Ekspor format API di ComfyUI. Hubungkan prompt, gambar, dan mask ke masukan node.
+	Load API Workflow…	Muat Alur Kerja API…
+	API workflow JSON	JSON alur kerja API
+	Official ComfyUI workflows	Alur kerja resmi ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Gambar dikirim sebagai PNG sRGB 8-bit. Hasil menjadi layer baru.
+	Save Starter Workflow…	Simpan Alur Kerja Awal…
+	Check Availability	Periksa Ketersediaan
+	Generate / Edit	Buat / Edit
+	Select the area to edit in PhotoCraft first.	Pilih area yang akan diedit di PhotoCraft terlebih dahulu.
+	Generate from text	Buat dari teks
+	Edit image	Edit gambar
+	Edit selection	Edit seleksi
+	Seed	Benih acak
+	Setup	Pengaturan
+	Model filenames (blank uses preset default)	Nama file model (kosong menggunakan bawaan)
+	Diffusion model	Model difusi
+	Text encoder	Encoder teks
+	Custom workflow overrides the model preset.	Alur kerja kustom menggantikan preset model.
+	An active selection limits where the edit is applied.	Seleksi aktif membatasi area penerapan edit.
+	Surrounding pixels	Piksel sekitar
+	Maximum processing side	Sisi pemrosesan maksimum
+	Diffusers model folder	Folder model Diffusers
+	Context / processing (padding removed after edit)	Konteks / pemrosesan (padding dihapus setelah pengeditan)
+	ControlNet	ControlNet

@@ -2800,3 +2800,40 @@ fontWeight	Italic	Italique
 	Quick Selection found nothing there	La Sélection rapide n'a rien trouvé à cet endroit
 	Object Selection found nothing there — try a tighter rectangle	La Sélection d'objet n'a rien trouvé à cet endroit — essayez un rectangle plus serré
 	No subject found — try a rectangle around the object	Aucun sujet trouvé — essayez un rectangle autour de l'objet
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Générer / Modifier…
+	ComfyUI Generate / Edit	ComfyUI Générer / Modifier
+	ComfyUI server	Serveur ComfyUI
+	Prompt	Instruction
+	Negative prompt	Instruction négative
+	Checkpoint (blank uses workflow default)	Checkpoint (vide utilise la valeur par défaut du workflow)
+	Steps	Étapes
+	Guidance	Guidage
+	Edit strength	Intensité de modification
+	Width / Height	Largeur / Hauteur
+	Custom model workflow	Workflow de modèle personnalisé
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Exportez le format API dans ComfyUI. Reliez le texte, l’image et le masque aux entrées des nœuds.
+	Load API Workflow…	Charger un workflow API…
+	API workflow JSON	JSON du workflow API
+	Official ComfyUI workflows	Workflows officiels de ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Les images sont envoyées en PNG sRGB 8 bits. Les résultats deviennent de nouveaux calques.
+	Save Starter Workflow…	Enregistrer le workflow initial…
+	Check Availability	Vérifier la disponibilité
+	Generate / Edit	Générer / Modifier
+	Select the area to edit in PhotoCraft first.	Sélectionnez d’abord la zone à modifier dans PhotoCraft.
+	Generate from text	Générer à partir du texte
+	Edit image	Modifier l’image
+	Edit selection	Modifier la sélection
+	Seed	Graine
+	Setup	Configuration
+	Model filenames (blank uses preset default)	Fichiers des modèles (vide pour les valeurs par défaut)
+	Diffusion model	Modèle de diffusion
+	Text encoder	Encodeur de texte
+	Custom workflow overrides the model preset.	Le workflow personnalisé remplace le modèle prédéfini.
+	An active selection limits where the edit is applied.	Une s?lection active limite la zone o? la modification est appliqu?e.
+	Surrounding pixels	Pixels environnants
+	Maximum processing side	Dimension maximale de traitement
+	Diffusers model folder	Dossier du modèle Diffusers
+	Context / processing (padding removed after edit)	Contexte / traitement (la marge est retirée après la modification)
+	ControlNet	ControlNet

@@ -22,6 +22,7 @@ mod canvas_geom;
 pub mod channel_cmds;
 pub mod color_cmds;
 pub mod color_to_alpha_cmds;
+pub mod comfyui_cmds;
 pub mod commands;
 pub mod comps_cmds;
 pub mod cutout_cmds;

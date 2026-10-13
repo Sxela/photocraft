@@ -3489,3 +3489,39 @@ cameraRaw	Masking	Маскування
 	Quick Selection found nothing there	Швидке виділення нічого тут не знайшло
 	Object Selection found nothing there — try a tighter rectangle	Виділення об'єктів нічого тут не знайшло — спробуйте вужчий прямокутник
 	No subject found — try a rectangle around the object	Об'єкт не знайдено — спробуйте прямокутник навколо об'єкта
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Генерація / Редагування…
+	ComfyUI Generate / Edit	ComfyUI Генерація / Редагування
+	ComfyUI server	Сервер ComfyUI
+	Prompt	Промпт
+	Negative prompt	Негативний промпт
+	Checkpoint (blank uses workflow default)	Чекпойнт (порожнє поле — типове значення workflow)
+	Steps	Кроки
+	Guidance	Сила дотримання промпту
+	Edit strength	Сила редагування
+	Width / Height	Ширина / Висота
+	Custom model workflow	Workflow для власної моделі
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Експортуйте формат API у ComfyUI. Прив’яжіть промпт, зображення та маску до входів вузлів.
+	Load API Workflow…	Завантажити API workflow…
+	API workflow JSON	JSON API workflow
+	Official ComfyUI workflows	Офіційні workflow ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Зображення надсилаються як 8-бітні PNG sRGB. Результати додаються на нові шари.
+	Save Starter Workflow…	Зберегти початковий workflow…
+	Check Availability	Перевірити доступність
+	Generate / Edit	Генерація / Редагування
+	Select the area to edit in PhotoCraft first.	Спочатку виділіть область для редагування у PhotoCraft.
+	Generate from text	Генерація за текстом
+	Edit image	Редагувати зображення
+	Edit selection	Редагувати виділення
+	Setup	Налаштування
+	Model filenames (blank uses preset default)	Файли моделей (порожньо — типові значення)
+	Diffusion model	Дифузійна модель
+	Text encoder	Текстовий енкодер
+	Custom workflow overrides the model preset.	Власний процес замінює налаштування моделі.
+	An active selection limits where the edit is applied.	??????? ????????? ??????? ??????? ???????????? ???????????.
+	Surrounding pixels	Навколишні пікселі
+	Maximum processing side	Максимальний розмір обробки
+	Diffusers model folder	Тека моделі Diffusers
+	Context / processing (padding removed after edit)	Контекст / обробка (поля видаляються після редагування)
+	ControlNet	ControlNet

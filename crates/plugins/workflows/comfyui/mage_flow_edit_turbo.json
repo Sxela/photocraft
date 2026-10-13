@@ -1,0 +1,652 @@
+{
+  "img2img": {
+    "api": {
+      "1": {
+        "class_type": "UNETLoader",
+        "inputs": {
+          "unet_name": "mage_flow_edit_turbo_int8_convrot.safetensors",
+          "weight_dtype": "default"
+        }
+      },
+      "2": {
+        "class_type": "CLIPLoader",
+        "inputs": {
+          "clip_name": "qwen3vl_4b_bf16.safetensors",
+          "type": "mage",
+          "device": "default"
+        }
+      },
+      "3": {
+        "class_type": "VAELoader",
+        "inputs": {
+          "vae_name": "mage_flow_vae_bf16.safetensors"
+        }
+      },
+      "10": {
+        "class_type": "LoadImage",
+        "inputs": {
+          "image": "photocraft-input.png"
+        }
+      },
+      "30": {
+        "class_type": "TextEncodeMageFlowEdit",
+        "inputs": {
+          "clip": [
+            "2",
+            0
+          ],
+          "vae": [
+            "3",
+            0
+          ],
+          "prompt": "Change the image into a watercolor.",
+          "negative_prompt": "",
+          "width": 1024,
+          "height": 1024,
+          "batch_size": 1,
+          "images.image_1": [
+            "10",
+            0
+          ]
+        }
+      },
+      "35": {
+        "class_type": "KSampler",
+        "inputs": {
+          "model": [
+            "1",
+            0
+          ],
+          "positive": [
+            "30",
+            0
+          ],
+          "negative": [
+            "30",
+            1
+          ],
+          "latent_image": [
+            "30",
+            2
+          ],
+          "seed": 0,
+          "steps": 4,
+          "cfg": 1,
+          "sampler_name": "euler",
+          "scheduler": "simple",
+          "denoise": 1
+        }
+      },
+      "36": {
+        "class_type": "VAEDecode",
+        "inputs": {
+          "samples": [
+            "35",
+            0
+          ],
+          "vae": [
+            "3",
+            0
+          ]
+        }
+      },
+      "37": {
+        "class_type": "PreviewImage",
+        "inputs": {
+          "images": [
+            "36",
+            0
+          ]
+        }
+      }
+    },
+    "ui": {
+      "last_node_id": 37,
+      "last_link_id": 10,
+      "nodes": [
+        {
+          "id": 1,
+          "type": "UNETLoader",
+          "pos": [
+            0,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 0,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "MODEL",
+              "type": "MODEL",
+              "links": [
+                4
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "UNETLoader"
+          },
+          "widgets_values": [
+            "mage_flow_edit_turbo_int8_convrot.safetensors",
+            "default"
+          ]
+        },
+        {
+          "id": 2,
+          "type": "CLIPLoader",
+          "pos": [
+            420,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 1,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "CLIP",
+              "type": "CLIP",
+              "links": [
+                1
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CLIPLoader"
+          },
+          "widgets_values": [
+            "qwen3vl_4b_bf16.safetensors",
+            "mage",
+            "default"
+          ]
+        },
+        {
+          "id": 3,
+          "type": "VAELoader",
+          "pos": [
+            840,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 2,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "VAE",
+              "type": "VAE",
+              "links": [
+                2,
+                9
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "VAELoader"
+          },
+          "widgets_values": [
+            "mage_flow_vae_bf16.safetensors"
+          ]
+        },
+        {
+          "id": 10,
+          "type": "LoadImage",
+          "pos": [
+            1260,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 3,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "links": [
+                3
+              ]
+            },
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": []
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "LoadImage"
+          },
+          "widgets_values": [
+            "photocraft-input.png",
+            "image"
+          ]
+        },
+        {
+          "id": 30,
+          "type": "TextEncodeMageFlowEdit",
+          "pos": [
+            0,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 4,
+          "mode": 0,
+          "inputs": [
+            {
+              "localized_name": "clip",
+              "name": "clip",
+              "type": "CLIP",
+              "link": 1
+            },
+            {
+              "label": "image_1",
+              "localized_name": "images.image_1",
+              "name": "images.image_1",
+              "shape": 7,
+              "type": "IMAGE",
+              "link": 3
+            },
+            {
+              "label": "image_2",
+              "localized_name": "images.image_2",
+              "name": "images.image_2",
+              "shape": 7,
+              "type": "IMAGE",
+              "link": null
+            },
+            {
+              "label": "image_3",
+              "localized_name": "images.image_3",
+              "name": "images.image_3",
+              "shape": 7,
+              "type": "IMAGE",
+              "link": null
+            },
+            {
+              "label": "image_4",
+              "localized_name": "images.image_4",
+              "name": "images.image_4",
+              "shape": 7,
+              "type": "IMAGE",
+              "link": null
+            },
+            {
+              "localized_name": "vae",
+              "name": "vae",
+              "shape": 7,
+              "type": "VAE",
+              "link": 2
+            },
+            {
+              "localized_name": "prompt",
+              "name": "prompt",
+              "type": "STRING",
+              "widget": {
+                "name": "prompt"
+              },
+              "link": null
+            },
+            {
+              "localized_name": "width",
+              "name": "width",
+              "type": "INT",
+              "widget": {
+                "name": "width"
+              },
+              "link": null
+            },
+            {
+              "localized_name": "height",
+              "name": "height",
+              "type": "INT",
+              "widget": {
+                "name": "height"
+              },
+              "link": null
+            }
+          ],
+          "outputs": [
+            {
+              "localized_name": "positive",
+              "name": "positive",
+              "type": "CONDITIONING",
+              "links": [
+                5
+              ]
+            },
+            {
+              "localized_name": "negative",
+              "name": "negative",
+              "type": "CONDITIONING",
+              "links": [
+                6
+              ]
+            },
+            {
+              "localized_name": "latent",
+              "name": "latent",
+              "type": "LATENT",
+              "links": [
+                7
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "TextEncodeMageFlowEdit"
+          },
+          "widgets_values": [
+            "Change the image into a watercolor.",
+            "",
+            1024,
+            1024,
+            1
+          ]
+        },
+        {
+          "id": 35,
+          "type": "KSampler",
+          "pos": [
+            420,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 5,
+          "mode": 0,
+          "inputs": [
+            {
+              "localized_name": "model",
+              "name": "model",
+              "type": "MODEL",
+              "link": 4
+            },
+            {
+              "localized_name": "positive",
+              "name": "positive",
+              "type": "CONDITIONING",
+              "link": 5
+            },
+            {
+              "localized_name": "negative",
+              "name": "negative",
+              "type": "CONDITIONING",
+              "link": 6
+            },
+            {
+              "localized_name": "latent_image",
+              "name": "latent_image",
+              "type": "LATENT",
+              "link": 7
+            },
+            {
+              "localized_name": "seed",
+              "name": "seed",
+              "type": "INT",
+              "widget": {
+                "name": "seed"
+              },
+              "link": null
+            }
+          ],
+          "outputs": [
+            {
+              "localized_name": "LATENT",
+              "name": "LATENT",
+              "type": "LATENT",
+              "links": [
+                8
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "KSampler"
+          },
+          "widgets_values": [
+            0,
+            "fixed",
+            4,
+            1,
+            "euler",
+            "simple",
+            1
+          ]
+        },
+        {
+          "id": 36,
+          "type": "VAEDecode",
+          "pos": [
+            840,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 6,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "samples",
+              "type": "LATENT",
+              "link": 8
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": 9
+            }
+          ],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "slot_index": 0,
+              "links": [
+                10
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "VAEDecode"
+          },
+          "widgets_values": []
+        },
+        {
+          "id": 37,
+          "type": "PreviewImage",
+          "pos": [
+            1260,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 7,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "images",
+              "type": "IMAGE",
+              "link": 10
+            }
+          ],
+          "outputs": [],
+          "properties": {
+            "Node name for S&R": "PreviewImage"
+          },
+          "widgets_values": []
+        }
+      ],
+      "links": [
+        [
+          1,
+          2,
+          0,
+          30,
+          0,
+          "CLIP"
+        ],
+        [
+          2,
+          3,
+          0,
+          30,
+          5,
+          "VAE"
+        ],
+        [
+          3,
+          10,
+          0,
+          30,
+          1,
+          "IMAGE"
+        ],
+        [
+          4,
+          1,
+          0,
+          35,
+          0,
+          "MODEL"
+        ],
+        [
+          5,
+          30,
+          0,
+          35,
+          1,
+          "CONDITIONING"
+        ],
+        [
+          6,
+          30,
+          1,
+          35,
+          2,
+          "CONDITIONING"
+        ],
+        [
+          7,
+          30,
+          2,
+          35,
+          3,
+          "LATENT"
+        ],
+        [
+          8,
+          35,
+          0,
+          36,
+          0,
+          "LATENT"
+        ],
+        [
+          9,
+          3,
+          0,
+          36,
+          1,
+          "VAE"
+        ],
+        [
+          10,
+          36,
+          0,
+          37,
+          0,
+          "IMAGE"
+        ]
+      ],
+      "groups": [],
+      "config": {},
+      "extra": {},
+      "version": 0.4
+    },
+    "bindings": {
+      "prompt": {
+        "node": "30",
+        "input": "prompt",
+        "widget": 0
+      },
+      "negative": {
+        "node": "30",
+        "input": "negative_prompt",
+        "widget": 1
+      },
+      "image": {
+        "node": "10",
+        "input": "image",
+        "widget": 0
+      },
+      "unet": {
+        "node": "1",
+        "input": "unet_name",
+        "widget": 0
+      },
+      "clip": {
+        "node": "2",
+        "input": "clip_name",
+        "widget": 0
+      },
+      "vae": {
+        "node": "3",
+        "input": "vae_name",
+        "widget": 0
+      },
+      "seed": {
+        "node": "35",
+        "input": "seed",
+        "widget": 0
+      },
+      "steps": {
+        "node": "35",
+        "input": "steps",
+        "widget": 2
+      },
+      "cfg": {
+        "node": "35",
+        "input": "cfg",
+        "widget": 3
+      },
+      "width": {
+        "node": "30",
+        "input": "width",
+        "widget": 2
+      },
+      "height": {
+        "node": "30",
+        "input": "height",
+        "widget": 3
+      }
+    }
+  }
+}

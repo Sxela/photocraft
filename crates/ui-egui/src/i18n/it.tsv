@@ -2449,3 +2449,40 @@ fontWeight	Italic	Corsivo
 	Quick Selection found nothing there	Selezione rapida non ha trovato nulla lì
 	Object Selection found nothing there — try a tighter rectangle	Selezione oggetto non ha trovato nulla lì — prova un rettangolo più stretto
 	No subject found — try a rectangle around the object	Nessun soggetto trovato — prova un rettangolo attorno all'oggetto
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Genera / Modifica…
+	ComfyUI Generate / Edit	ComfyUI Genera / Modifica
+	ComfyUI server	Server ComfyUI
+	Prompt	Prompt
+	Negative prompt	Prompt negativo
+	Checkpoint (blank uses workflow default)	Checkpoint (vuoto usa il valore predefinito del flusso)
+	Steps	Passaggi
+	Guidance	Guida
+	Edit strength	Intensità di modifica
+	Width / Height	Larghezza / Altezza
+	Custom model workflow	Flusso di lavoro di modello personalizzato
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Esporta il formato API in ComfyUI. Collega prompt, immagine e maschera agli ingressi dei nodi.
+	Load API Workflow…	Carica flusso API…
+	API workflow JSON	JSON del flusso API
+	Official ComfyUI workflows	Flussi ufficiali di ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Le immagini vengono inviate come PNG sRGB a 8 bit. I risultati diventano nuovi livelli.
+	Save Starter Workflow…	Salva flusso iniziale…
+	Check Availability	Verifica disponibilità
+	Generate / Edit	Genera / Modifica
+	Select the area to edit in PhotoCraft first.	Seleziona prima l’area da modificare in PhotoCraft.
+	Generate from text	Genera dal testo
+	Edit image	Modifica immagine
+	Edit selection	Modifica selezione
+	Seed	Seme
+	Setup	Configurazione
+	Model filenames (blank uses preset default)	File dei modelli (vuoto usa i valori predefiniti)
+	Diffusion model	Modello di diffusione
+	Text encoder	Codificatore di testo
+	Custom workflow overrides the model preset.	Il workflow personalizzato sostituisce il modello predefinito.
+	An active selection limits where the edit is applied.	Una selezione attiva limita l?area a cui viene applicata la modifica.
+	Surrounding pixels	Pixel circostanti
+	Maximum processing side	Dimensione massima di elaborazione
+	Diffusers model folder	Cartella del modello Diffusers
+	Context / processing (padding removed after edit)	Contesto / elaborazione (il riempimento viene rimosso dopo la modifica)
+	ControlNet	ControlNet

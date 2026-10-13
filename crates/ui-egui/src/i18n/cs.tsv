@@ -2379,3 +2379,40 @@ fontWeight	Italic	Kurzíva
 	Quick Selection found nothing there	Rychlý výběr zde nic nenašel
 	Object Selection found nothing there — try a tighter rectangle	Výběr objektu zde nic nenašel — zkuste těsnější obdélník
 	No subject found — try a rectangle around the object	Nebyl nalezen žádný objekt — zkuste obdélník kolem objektu
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Generovat / Upravit…
+	ComfyUI Generate / Edit	ComfyUI Generovat / Upravit
+	ComfyUI server	Server ComfyUI
+	Prompt	Prompt
+	Negative prompt	Negativní prompt
+	Checkpoint (blank uses workflow default)	Checkpoint (prázdné pole použije výchozí hodnotu workflow)
+	Steps	Kroky
+	Guidance	Síla vedení
+	Edit strength	Síla úpravy
+	Width / Height	Šířka / Výška
+	Custom model workflow	Workflow vlastního modelu
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	V ComfyUI exportujte formát API. Propojte prompt, obrázek a masku se vstupy uzlů.
+	Load API Workflow…	Načíst API workflow…
+	API workflow JSON	JSON API workflow
+	Official ComfyUI workflows	Oficiální workflow ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Obrázky se odesílají jako 8bitové PNG sRGB. Výsledky se přidají jako nové vrstvy.
+	Save Starter Workflow…	Uložit výchozí workflow…
+	Check Availability	Zkontrolovat dostupnost
+	Generate / Edit	Generovat / Upravit
+	Select the area to edit in PhotoCraft first.	Nejprve v PhotoCraft vyberte oblast k úpravě.
+	Generate from text	Generovat z textu
+	Edit image	Upravit obrázek
+	Edit selection	Upravit výběr
+	Seed	Náhodné semínko
+	Setup	Nastavení
+	Model filenames (blank uses preset default)	Názvy souborů modelů (prázdné použijí výchozí nastavení)
+	Diffusion model	Difuzní model
+	Text encoder	Textový enkodér
+	Custom workflow overrides the model preset.	Vlastní workflow má přednost před modelem.
+	An active selection limits where the edit is applied.	Aktivn? v?b?r omezuje oblast pou?it? ?pravy.
+	Surrounding pixels	Okolní pixely
+	Maximum processing side	Maximální rozměr zpracování
+	Diffusers model folder	Složka modelu Diffusers
+	Context / processing (padding removed after edit)	Kontext / zpracování (výplň se po úpravě odstraní)
+	ControlNet	ControlNet
