@@ -49,6 +49,7 @@ fn screen(h: &Harness<'static, PhotocraftApp>, x: f32, y: f32) -> Pos2 {
         center: v.center,
         flip: app.ui.view.flip_horizontal,
         rotation: v.rotation,
+        aspect: app.ui.view.display_aspect(),
     };
     xf.to_screen(x, y)
 }
@@ -79,6 +80,32 @@ fn selection(h: &Harness<'static, PhotocraftApp>) -> Option<Rect> {
 
 fn near(r: Rect, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
     r.x0.abs_diff(x0) <= 1 && r.y0.abs_diff(y0) <= 1 && r.x1.abs_diff(x1) <= 1 && r.y1.abs_diff(y1) <= 1
+}
+
+#[test]
+fn switching_tools_discards_unfinished_polygon_without_changing_selection() {
+    let mut app = polygon_app();
+    app.run("select.rect", json!({"x": 200, "y": 150, "width": 50, "height": 50})).unwrap();
+    let before = app.session.active().unwrap().doc.selection.as_ref().unwrap().content_bounds();
+    let history = app.session.active().unwrap().history.past_len();
+
+    ev(&mut app, "down", 20.0, 20.0, Modifiers::NONE);
+    ev(&mut app, "up", 20.0, 20.0, Modifiers::NONE);
+    assert_eq!(app.ui.polygon.len(), 1);
+    assert_eq!(app.ui.polygon_mode, "replace");
+    assert!(crate::canvas::polygon_replaces_selection(&app));
+
+    app.ui.tool = Tool::QuickSelection;
+    app.sync_views();
+    assert!(app.ui.polygon.is_empty());
+    assert!(app.ui.polygon_mode.is_empty());
+    assert!(!crate::canvas::polygon_replaces_selection(&app));
+    assert_eq!(app.session.active().unwrap().doc.selection.as_ref().unwrap().content_bounds(), before);
+    assert_eq!(app.session.active().unwrap().history.past_len(), history);
+
+    app.ui.tool = Tool::PolygonLasso;
+    app.sync_views();
+    assert!(app.ui.polygon.is_empty(), "returning to the tool must start a fresh outline");
 }
 
 #[test]
@@ -343,4 +370,38 @@ fn alt_drags_draw_freehand_and_releasing_alt_keeps_the_polygon_open() {
     assert!(!app.ui.polygon.is_empty() && app.session.active().unwrap().doc.selection.is_none());
     crate::canvas::commit_polygon(&mut app);
     assert!(app.session.active().unwrap().doc.selection.as_ref().unwrap().sample_channel(110, 100, 0) > 0.5);
+}
+
+#[test]
+fn shift_constrains_polygonal_lasso_segments_but_unmodified_clicks_remain_free() {
+    let mut app = polygon_app();
+    ev(&mut app, "down", 100.0, 100.0, Modifiers::NONE);
+    ev(&mut app, "up", 100.0, 100.0, Modifiers::NONE);
+    assert_eq!(app.ui.polygon, vec![[100.0, 100.0]]);
+
+    // Near a diagonal: Shift constrains to exactly 45° from the previous fixed point.
+    ev(&mut app, "down", 140.0, 120.0, Modifiers::SHIFT);
+    ev(&mut app, "up", 140.0, 120.0, Modifiers::SHIFT);
+    let diagonal = app.ui.polygon[1];
+    assert!((diagonal[0] - diagonal[1]).abs() < 1e-8, "45-degree direction: {diagonal:?}");
+    assert!((diagonal[0] - 100.0 - 40.0_f64.hypot(20.0) / 2.0_f64.sqrt()).abs() < 1e-8);
+    // Releasing Shift restores free placement rather than constraining subsequent points.
+    ev(&mut app, "down", 155.0, 175.0, Modifiers::NONE);
+    ev(&mut app, "up", 155.0, 175.0, Modifiers::NONE);
+    assert_eq!(app.ui.polygon[2], [155.0, 175.0]);
+}
+
+#[test]
+fn shift_polygonal_lasso_snap_has_all_eight_directions_and_handles_zero_length() {
+    let origin = [200.0, 150.0];
+    let directions = [[40.0, 1.0], [40.0, 25.0], [1.0, 40.0], [-40.0, 25.0], [-40.0, -1.0], [-40.0, -25.0], [-1.0, -40.0], [40.0, -25.0]];
+    for delta in directions {
+        let end = crate::canvas::constrained_polygon_point(origin, [origin[0] + delta[0], origin[1] + delta[1]]);
+        let dx = end[0] - origin[0];
+        let dy = end[1] - origin[1];
+        let angle = dy.atan2(dx) / std::f64::consts::FRAC_PI_4;
+        assert!((angle - angle.round()).abs() < 1e-9, "{delta:?} → {end:?}");
+        assert!((dx.hypot(dy) - delta[0].hypot(delta[1])).abs() < 1e-8);
+    }
+    assert_eq!(crate::canvas::constrained_polygon_point(origin, origin), origin);
 }

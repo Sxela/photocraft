@@ -35,6 +35,35 @@ fn maxflow_clrs_network() {
     assert_eq!(g.residual_out_of_source_side(), 0.0);
 }
 
+#[test]
+fn maxflow_can_be_cancelled_and_otherwise_cuts_the_same() {
+    // A 120 × 100 grid with terminal links both ways (push/relabel) and a small one (BK).
+    for (w, h) in [(120usize, 100usize), (20, 15)] {
+        let mut g = Graph::with_capacity(w * h, w * h * 2);
+        let mut z = 7u64;
+        let mut next = || {
+            z = z.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (z >> 40) as f32 / (1u64 << 24) as f32
+        };
+        for i in 0..w * h {
+            g.add_tweights(i, next() * 2.0, next() * 2.0);
+            if i % w + 1 < w {
+                g.add_edge(i, i + 1, next(), next());
+            }
+            if i + w < w * h {
+                g.add_edge(i, i + w, next(), next());
+            }
+        }
+        let (mut plain, mut asked) = (g.clone(), g.clone());
+        let flow = plain.maxflow();
+        assert_eq!(asked.maxflow_with(&|| false), Some(flow));
+        assert!((0..w * h).all(|i| plain.in_source(i) == asked.in_source(i)));
+        if w * h > 4096 {
+            assert_eq!(g.maxflow_with(&|| true), None);
+        }
+    }
+}
+
 /// Reference max flow (Edmonds–Karp on a dense matrix; node 0 = s, n−1 = t).
 fn edmonds_karp(cap: &mut [Vec<f64>]) -> f64 {
     let n = cap.len();
@@ -316,6 +345,45 @@ fn quick_select_with_points_far_off_canvas_selects_nothing() {
 }
 
 #[test]
+fn quick_select_cuts_window_sizes_in_parallel_with_the_same_result() {
+    // Soft gradients and faint blobs let a selection spread, so most strokes need more than one
+    // window size; cutting several at once must keep exactly what one-after-another keeps.
+    let (w, h) = (1200usize, 900usize);
+    let img = RgbImage::from_fn(w, h, |x, y| {
+        let (fx, fy) = (x as f32 / w as f32, y as f32 / h as f32);
+        let blob = (((fx * 9.0).sin() * (fy * 7.0).cos()) * 0.5 + 0.5) * 0.06;
+        [0.3 + 0.4 * fx + blob, 0.5 + 0.2 * fy, 0.7 - 0.3 * fx + blob]
+    });
+    let s = ImageSampler { img: &img, origin: (0, 0) };
+    let canvas = Rect::new(0, 0, w as i32, h as i32);
+    let t = quick::Tuning::default();
+    let strokes: [(&[(f32, f32)], f32); 4] = [
+        (&[(300.0, 300.0)], 30.0),
+        (&[(500.0, 400.0), (580.0, 400.0), (660.0, 420.0)], 60.0),
+        (&[(200.0, 700.0), (260.0, 650.0), (320.0, 700.0), (380.0, 650.0)], 30.0),
+        (&[(900.0, 200.0)], 120.0),
+    ];
+    let mut most = 0;
+    for (pts, size) in strokes {
+        let one = quick::quick_select_batched::<true>(&s, canvas, pts, size, &t, 1);
+        let many = quick::quick_select_batched::<true>(&s, canvas, pts, size, &t, 4);
+        assert_eq!(one.as_ref().map(|(r, n)| (r.bbox, &r.mask, n)), many.as_ref().map(|(r, n)| (r.bbox, &r.mask, n)), "{pts:?} size {size}");
+        most = most.max(one.map_or(0, |(_, n)| n));
+    }
+    assert!(most > 1, "no stroke needed a larger window, so the test exercises nothing");
+}
+
+#[test]
+fn quick_select_window_sizes_stop_at_the_canvas() {
+    let canvas = Rect::new(0, 0, 1000, 800);
+    let bbox = Rect::new(400, 300, 460, 360);
+    assert_eq!(quick::margins_to_try(96, bbox, canvas, 4), vec![96, 192, 384, 768]);
+    // 768 already covers the canvas: no larger (identical) window is cut.
+    assert_eq!(quick::margins_to_try(384, bbox, canvas, 4), vec![384, 768]);
+    assert_eq!(quick::margins_to_try(96, bbox, canvas, 0), vec![96]);
+}
+
+#[test]
 fn quick_select_grows_without_leaking() {
     let img = two_regions(140, 100);
     let s = ImageSampler { img: &img, origin: (0, 0) };
@@ -590,4 +658,25 @@ fn dump_quick_scenes() {
     });
     save("thin_line", &line);
     save("disc_scene", &disc_scene(600, 500, 300.0, 250.0, 180.0, 4).0);
+}
+
+#[test]
+fn object_at_finds_the_disc_under_the_cursor() {
+    let (img, truth) = disc_scene(320, 240, 160.0, 120.0, 70.0, 7);
+    let s = ImageSampler { img: &img, origin: (0, 0) };
+    let canvas = Rect::new(0, 0, 320, 240);
+    let reg = grabcut::object_at(&s, canvas, 165.0, 118.0, 20_000).unwrap();
+    let v = iou(&reg, &truth, 320, 240);
+    assert!(v > 0.9, "IoU {v}");
+}
+
+#[test]
+fn object_at_on_the_background_or_off_canvas_finds_nothing() {
+    let (img, _) = disc_scene(320, 240, 160.0, 120.0, 70.0, 7);
+    let s = ImageSampler { img: &img, origin: (0, 0) };
+    let canvas = Rect::new(0, 0, 320, 240);
+    assert!(grabcut::object_at(&s, canvas, 10.0, 10.0, 20_000).is_none());
+    assert!(grabcut::object_at(&s, canvas, -5.0, 10.0, 20_000).is_none());
+    assert!(grabcut::object_at(&s, canvas, f32::NAN, 10.0, 20_000).is_none());
+    assert!(grabcut::object_at(&s, canvas, 400.0, 10.0, 0).is_none());
 }

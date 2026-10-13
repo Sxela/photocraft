@@ -112,8 +112,8 @@ fn tysh_with_font(text: &str, runs: &[Run], box_bounds: Option<[f64; 4]>, transf
         .with("boundingBox", rect("boundingBox"))
         .with("TextIndex", D::Integer(0))
         .with("EngineData", D::RawData(photocraft_text::engine_data::write(&engine_data(text, runs, box_bounds, font))));
-    let bounds = [ink[0].floor() as i32, ink[1].floor() as i32, ink[2].ceil() as i32, ink[3].ceil() as i32];
-    write_tysh(&TySh { transform, text: desc, warp: None, bounds })
+    // Unwarped type: Photoshop writes four zero f32s after the warp descriptor.
+    write_tysh(&TySh { transform, text: desc, warp: None, bounds: [0.0; 4] })
 }
 
 struct Case {
@@ -261,7 +261,7 @@ fn imported_type_layers_keep_their_full_bounds() {
         // Model: size in points at the document resolution, transform and shape as written.
         assert!((t.runs[0].style.size_pt - c.size_pt).abs() < 0.01, "{}: size {} pt, want {}", c.name, t.runs[0].style.size_pt, c.size_pt);
         assert_eq!(t.transform, c.transform, "{}", c.name);
-        match (c.box_bounds, t.shape) {
+        match (c.box_bounds, t.shape.clone()) {
             (None, TextShape::Point) => {}
             (Some(b), TextShape::Box { x, y, width, height }) => {
                 assert_eq!([x, y, x + width, y + height].map(f64::from), b, "{}", c.name)

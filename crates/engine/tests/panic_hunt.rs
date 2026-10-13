@@ -9,6 +9,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 fn fresh() -> Session {
+    // Belt and braces with the EXTERNAL skip below: nothing in this process may reach a printer.
+    photocraft_engine::print_cmds::disable_printing();
     let mut s = Session::new();
     s.execute("file.new", json!({"width": 24, "height": 16})).unwrap();
     s.execute("layer.new.layer", json!({})).unwrap();
@@ -16,9 +18,13 @@ fn fresh() -> Session {
     s
 }
 
-/// Run `id` with `p` on a fresh session, on a worker thread. Returns `Err` with a reason on panic
-/// or timeout, `Ok` otherwise (whether the command returned Ok or a graceful Err).
-fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
+/// Wall-clock budget for one command on the 24×16 test document. Every command needs well under
+/// 0.3 s even on a heavily loaded machine, so this only catches real hangs.
+const DEADLINE: Duration = Duration::from_secs(4);
+
+/// Run `id` with `p` on a fresh session, on a worker thread. `None` if it timed out, else whether
+/// it finished without panicking (returning Ok or a graceful Err both count).
+fn run_once(id: &str, p: &Value) -> Option<bool> {
     let (tx, rx) = mpsc::channel();
     let (id, p) = (id.to_string(), p.clone());
     std::thread::spawn(move || {
@@ -28,10 +34,20 @@ fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
         }));
         let _ = tx.send(r.is_ok());
     });
-    match rx.recv_timeout(Duration::from_secs(4)) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err("panicked".into()),
-        Err(_) => Err("hung (>4s)".into()),
+    rx.recv_timeout(DEADLINE).ok()
+}
+
+/// `Err` with a reason on panic or hang, `Ok` otherwise.
+///
+/// The first command to touch process-wide lazy state pays for it: the first `type.create`
+/// starts the shared text engine, which scans every system font (3.5–5 s under load; #2994). A
+/// real hang reproduces and one-time setup doesn't, so a timeout counts only if a rerun on a
+/// fresh session times out too.
+fn run_guarded(id: &str, p: &Value) -> Result<(), String> {
+    match run_once(id, p).or_else(|| run_once(id, p)) {
+        Some(true) => Ok(()),
+        Some(false) => Err("panicked".into()),
+        None => Err(format!("hung (>{}s, twice)", DEADLINE.as_secs())),
     }
 }
 
@@ -44,8 +60,12 @@ fn no_command_panics_or_hangs_on_adversarial_params() {
         json!({"x": 1e5, "y": -1e5, "radius": 300, "amount": 300, "angle": 1e5, "opacity": -100, "scale": -5, "gamma": -1}),
         json!({"points": [], "from": [0, 0], "to": [0, 0], "stops": [], "matrix": [0, 0, 0, 0, 0, 0], "colors": [], "name": "", "mode": "", "style": ""}),
     ];
+    // Commands whose success reaches outside the process: `file.print` and `file.printOneCopy`
+    // spool to CUPS, so a fuzz run with `{}` printed a blank page on the default printer. Their
+    // params are validated like everyone else's; the spooling itself is not fuzzed.
+    const EXTERNAL: &[&str] = &["file.print", "file.printOneCopy"];
     let mut bad: Vec<String> = Vec::new();
-    for spec in command_specs() {
+    for spec in command_specs().iter().filter(|spec| !EXTERNAL.contains(&spec.id)) {
         for p in &params {
             if let Err(why) = run_guarded(spec.id, p) {
                 bad.push(format!("{} [{why}] <- {p}", spec.id));

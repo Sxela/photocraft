@@ -2,6 +2,8 @@
 //! rows with thumbnails and eye toggles. Every action is an engine command (`channel.*`,
 //! `select.loadSelection`, `select.saveSelection`, …); the targeted channel and the eyes live in
 //! the engine's `DocState::channel_view`, so agents see the same state through `inspect`.
+//! Rows can be dragged onto the footer's buttons, as in Photoshop (#4689): New duplicates the
+//! channel, Delete deletes it, and Load Channel as Selection loads it.
 
 use egui::{Align2, Color32, Rect, RichText, Sense, Stroke, StrokeKind, pos2, vec2};
 use photocraft_doc::ColorIndicates;
@@ -11,7 +13,7 @@ use serde_json::{Value, json};
 use crate::theme::{self, Tokens};
 use crate::{PhotocraftApp, icons, widgets};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Row {
     Composite,
     Color(usize),
@@ -65,7 +67,10 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // The active layer's mask (Photoshop lists it, in italics, below the colour channels).
     let masked = active_layer.and_then(|id| doc.layer(id)).filter(|l| l.mask.is_some()).cloned();
     let mask_tex = masked.as_ref().and_then(|l| Some(app.mask_thumb(&ctx, &doc, l.id, l.mask.as_ref()?)));
-    let mask_targeted = masked.is_some() && app.ui.mask_target && view.target == ChannelTarget::Composite && !quick;
+    let mask_targeted = masked.is_some()
+        && (app.ui.mask_target || view.target == ChannelTarget::LayerMask)
+        && (view.target == ChannelTarget::Composite || view.target == ChannelTarget::LayerMask)
+        && !quick;
     // Multichannel images are their ink channels only (no composite or colour rows).
     let multichannel = doc.mode == photocraft_doc::ColorMode::Multichannel;
     let mut rows = if multichannel { Vec::new() } else { vec![Row::Composite] };
@@ -119,7 +124,10 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 }
             };
             let row_h = if t.pro { 36.0 } else { 40.0 };
-            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
+            if resp.drag_started() {
+                ctx.data_mut(|d| d.insert_temp(drag_id(), (row, name.clone())));
+            }
             let painter = ui.painter_at(rect.expand(1.0));
             if selected {
                 painter.rect_filled(rect, if t.pro { 0.0 } else { t.radius }, if t.pro { t.row_selected } else { t.hover });
@@ -171,7 +179,12 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             let italic = matches!(row, Row::QuickMask | Row::LayerMask) || matches!(row, Row::Alpha(i) if doc.channels[i].spot.is_some());
             let mut job = egui::text::LayoutJob::default();
             let font = if selected && !t.pro { theme::medium(12.5) } else { egui::FontId::proportional(12.0) };
-            job.append(&name, 0.0, egui::TextFormat { font_id: font, color: t.text, italics: italic, ..Default::default() });
+            // Built-in labels only: alpha/spot names and "{layer} Mask" stay verbatim.
+            let label = match row {
+                Row::Composite | Row::Color(_) | Row::QuickMask => tl!(&name).to_owned(),
+                Row::Alpha(_) | Row::LayerMask => name.clone(),
+            };
+            job.append(&label, 0.0, egui::TextFormat { font_id: font, color: t.text, italics: italic, ..Default::default() });
             let galley = painter.layout_job(job);
             let text_pos = pos2(cell.right() + 10.0, rect.center().y - galley.size().y / 2.0);
             painter.galley(text_pos, galley, t.text);
@@ -195,7 +208,7 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 } else if row == Row::LayerMask {
                     // Targets the mask, as clicking its thumbnail in the Layers panel does.
                     mask_click = Some(true);
-                    actions.push(("channel.target".into(), json!({ "channel": "composite" })));
+                    actions.push(("channel.target".into(), json!({ "channel": "mask" })));
                 } else {
                     if matches!(row, Row::Composite | Row::Color(_)) {
                         mask_click = Some(false);
@@ -270,30 +283,52 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             });
         }
     });
+    // A row being dragged: its name follows the pointer until it is dropped.
+    let dragged = ctx.data(|d| d.get_temp::<(Row, String)>(drag_id()));
+    if let Some((_, name)) = &dragged
+        && let Some(p) = ctx.input(|i| i.pointer.interact_pos())
+    {
+        crate::layer_transfer::ghost(&ctx, p, name);
+    }
+    let mask_layer = masked.as_ref().map(|l| l.id.0);
+    let drop = |ui: &egui::Ui, button: &egui::Response, on: Footer| {
+        let (row, name) = dragged.as_ref()?;
+        let action = drop_action(*row, name, mask_layer, on)?;
+        crate::panels::dropped_on(ui, button).then_some(action)
+    };
     // Photoshop's order from the left: Load as selection, Save selection, New, Delete.
     widgets::panel_footer(ui, |ui| {
         let target_ref = match view.target {
             ChannelTarget::Alpha(i) => json!(i),
             ChannelTarget::Color(k) => json!({ "color": k }),
             ChannelTarget::Composite => json!("composite"),
+            ChannelTarget::LayerMask => json!("mask"),
+            ChannelTarget::VectorMask => json!("vectorMask"),
         };
-        if icons::button(ui, "trash", 26.0, false, tl!("Delete current channel")).clicked() {
+        let trash = icons::button(ui, "trash", 26.0, false, tl!("Delete current channel"));
+        if trash.clicked() {
             actions.push(("channel.delete".into(), json!({})));
         }
-        if icons::button(ui, "plus", 26.0, false, tl!("Create new channel")).clicked() {
+        actions.extend(drop(ui, &trash, Footer::Delete));
+        let new = icons::button(ui, "plus", 26.0, false, tl!("Create new channel"));
+        if new.clicked() {
             actions.push(("channel.new".into(), json!({})));
         }
+        actions.extend(drop(ui, &new, Footer::New));
         if icons::button(ui, "square-dashed", 26.0, false, tl!("Save selection as channel")).clicked() {
             actions.push(("select.saveSelection".into(), json!({})));
         }
-        if icons::button(ui, "circle-dashed", 26.0, false, tl!("Load channel as selection")).clicked() {
+        let load = icons::button(ui, "circle-dashed", 26.0, false, tl!("Load channel as selection"));
+        if load.clicked() {
             actions.push(("select.loadSelection".into(), json!({ "channel": target_ref })));
         }
+        actions.extend(drop(ui, &load, Footer::Load));
     });
-    ctx.data_mut(|d| d.insert_temp(thumbs_id(), drawn));
-    if let Some(on) = mask_click {
-        app.ui.mask_target = on;
+    // The drag ends on any release, after the buttons have had a chance to take the drop.
+    if ctx.input(|i| i.pointer.any_released()) {
+        ctx.data_mut(|d| d.remove::<(Row, String)>(drag_id()));
     }
+    ctx.data_mut(|d| d.insert_temp(thumbs_id(), drawn));
     for (id, p) in actions {
         if id == "ui.renameChannel" {
             if let Some(i) = p.as_u64().and_then(|i| doc.channels.get(i as usize)) {
@@ -304,6 +339,39 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         }
         let _ = app.run(&id, p);
     }
+    if let Some(on) = mask_click {
+        app.ui.mask_target = on;
+        app.sync_mask_targets();
+    }
+}
+
+/// The footer buttons a row can be dropped on.
+#[derive(Clone, Copy)]
+enum Footer {
+    Delete,
+    New,
+    Load,
+}
+
+/// What dropping `row` (named `name`) on a footer button does, as in Photoshop; `None` where
+/// Photoshop does nothing either (colour channels can't be deleted here). `mask_layer` is the
+/// layer whose mask the temporary mask row shows.
+fn drop_action(row: Row, name: &str, mask_layer: Option<u64>, on: Footer) -> Option<(String, Value)> {
+    match (on, row) {
+        (Footer::Delete, Row::Alpha(i)) => Some(("channel.delete".into(), json!({ "channel": i }))),
+        // Asks "Apply mask to layer before removing?", like dropping the mask's Layers thumbnail.
+        (Footer::Delete, Row::LayerMask) => Some(crate::mask_trash_prompt::drop_action(mask_layer?, crate::mask_thumbs_ui::MaskKind::Pixel)),
+        (Footer::Delete, _) => None,
+        // The engine would name a mask's copy after the composite; Photoshop says "Layer 1 Mask copy".
+        (Footer::New, Row::LayerMask) => Some(("channel.duplicate".into(), json!({ "channel": "mask", "name": format!("{name} copy") }))),
+        (Footer::New, _) => Some(("channel.duplicate".into(), json!({ "channel": row.reference() }))),
+        (Footer::Load, Row::LayerMask) => Some(("select.loadSelection".into(), json!({ "channel": "mask", "layer": mask_layer? }))),
+        (Footer::Load, _) => Some(("select.loadSelection".into(), json!({ "channel": row.reference() }))),
+    }
+}
+
+fn drag_id() -> egui::Id {
+    egui::Id::new("channel-row-drag")
 }
 
 fn thumbs_id() -> egui::Id {
@@ -413,5 +481,123 @@ mod tests {
         app.session.execute("prefs.set", json!({"values": {"interface.showChannelsInColor": true}})).unwrap();
         let thumbs_color = app.channel_thumbs(&ctx);
         assert_eq!(thumbs_gray.len(), thumbs_color.len());
+    }
+
+    /// The Channels tab (the Layers card's second tab) of a 64×48 white document with a layer
+    /// mask on "Masked" and one alpha channel.
+    fn channels_harness() -> (egui_kittest::Harness<'static, PhotocraftApp>, u64) {
+        let mut s = photocraft_engine::Session::new();
+        s.execute("file.new", json!({"width": 64, "height": 48})).unwrap();
+        let masked = s.execute("layer.new.layer", json!({"name": "Masked"})).unwrap()["layer"].as_u64().unwrap();
+        s.execute("layer.layerMask.revealAll", json!({"layer": masked})).unwrap();
+        s.execute("channel.new", json!({})).unwrap();
+        let mut h = egui_kittest::Harness::builder().with_size(vec2(1440.0, 1000.0)).with_max_steps(64).build_eframe(move |cc| {
+            PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+            PhotocraftApp::new(s, crate::Services::default())
+        });
+        let ctx = h.ctx.clone();
+        let (req, _rx) = crate::control::ControlRequest::new(
+            "ui.set",
+            json!({"dockWidth": 290.0, "dockTabs": {"layers": 1}, "dock": {"collapsed": ["color", "properties", "history", "navigator"]}}),
+        );
+        crate::control::handle(h.state_mut(), &ctx, &req);
+        h.run_steps(8);
+        (h, masked)
+    }
+
+    /// The centre of the row or button labelled `label` (not its tooltip, which a hover leaves open).
+    fn at(h: &egui_kittest::Harness<'_, PhotocraftApp>, label: &str) -> egui::Pos2 {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::{NodeT, Queryable};
+        h.query_all_by_label(label)
+            .find(|n| matches!(n.accesskit_node().role(), Role::Button | Role::ListBoxOption | Role::Label) && n.rect().height() > 20.0)
+            .unwrap_or_else(|| panic!("no row or button {label}"))
+            .rect()
+            .center()
+    }
+
+    /// A real press, drag and release.
+    fn drag(h: &mut egui_kittest::Harness<'_, PhotocraftApp>, from: egui::Pos2, to: egui::Pos2) {
+        use egui::{Modifiers, PointerButton};
+        h.hover_at(from);
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+        h.run_steps(1);
+        for i in 1..=6 {
+            h.hover_at(from + (to - from) * (i as f32 / 6.0));
+            h.run_steps(1);
+        }
+        h.event(egui::Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+        h.run_steps(3);
+    }
+
+    /// Drags the row or button labelled `from` onto the one labelled `to`.
+    fn drag_to(h: &mut egui_kittest::Harness<'_, PhotocraftApp>, from: &str, to: &str) {
+        let (from, to) = (at(h, from), at(h, to));
+        drag(h, from, to);
+    }
+
+    fn alphas(h: &egui_kittest::Harness<'_, PhotocraftApp>) -> Vec<String> {
+        h.state().session.active().unwrap().doc.channels.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// #4689: as in Photoshop, a channel dropped on New is duplicated, on Delete deleted, and on
+    /// Load Channel as Selection loaded.
+    #[test]
+    fn rows_dropped_on_the_footer_duplicate_delete_and_load() {
+        let (mut h, _) = channels_harness();
+        assert_eq!(alphas(&h), ["Alpha 1"]);
+        let steps = h.state().session.active().unwrap().history.past_len();
+
+        drag_to(&mut h, "Alpha 1", "Create new channel");
+        assert_eq!(alphas(&h), ["Alpha 1", "Alpha 1 copy"]);
+        assert_eq!(h.state().session.active().unwrap().history.past_len(), steps + 1, "one history step");
+        drag_to(&mut h, "Red", "Create new channel");
+        assert_eq!(alphas(&h), ["Alpha 1", "Alpha 1 copy", "Red copy"]);
+        drag_to(&mut h, "Masked Mask", "Create new channel");
+        assert_eq!(alphas(&h), ["Alpha 1", "Alpha 1 copy", "Red copy", "Masked Mask copy"]);
+
+        drag_to(&mut h, "Alpha 1 copy", "Delete current channel");
+        assert_eq!(alphas(&h), ["Alpha 1", "Red copy", "Masked Mask copy"]);
+        // Colour channels stay: Photoshop would turn the image into Multichannel.
+        drag_to(&mut h, "Green", "Delete current channel");
+        assert_eq!(alphas(&h), ["Alpha 1", "Red copy", "Masked Mask copy"]);
+        assert_eq!(h.state().session.active().unwrap().doc.mode, photocraft_doc::ColorMode::Rgb);
+
+        assert!(h.state().session.active().unwrap().doc.selection.is_none());
+        drag_to(&mut h, "Red copy", "Load channel as selection");
+        assert!(h.state().session.active().unwrap().doc.selection.is_some(), "the white channel selects everything");
+    }
+
+    /// A plain click on a row still targets it, and a drag released elsewhere does nothing.
+    #[test]
+    fn clicks_still_target_and_a_drop_elsewhere_does_nothing() {
+        let (mut h, _) = channels_harness();
+        let p = at(&h, "Alpha 1");
+        h.hover_at(p);
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.run_steps(1);
+        h.event(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.run_steps(3);
+        assert_eq!(h.state().session.active().unwrap().channel_view.target, ChannelTarget::Alpha(0));
+
+        let steps = h.state().session.active().unwrap().history.past_len();
+        let (from, to) = (at(&h, "Alpha 1"), at(&h, "Blue"));
+        drag(&mut h, from, to);
+        drag_to(&mut h, "Alpha 1", "Save selection as channel");
+        assert_eq!(alphas(&h), ["Alpha 1"]);
+        assert_eq!(h.state().session.active().unwrap().history.past_len(), steps, "nothing ran");
+        assert!(h.ctx.data(|d| d.get_temp::<(Row, String)>(drag_id())).is_none(), "the drag ended");
+    }
+
+    /// The layer mask's row asks "Apply mask to layer before removing?", like its Layers thumbnail.
+    #[test]
+    fn the_layer_mask_row_on_the_trash_asks_first() {
+        let (mut h, masked) = channels_harness();
+        drag_to(&mut h, "Masked Mask", "Delete current channel");
+        assert!(h.state().ui.dialogs.iter().any(|d| crate::mask_trash_prompt::owns(&d.fields)), "the prompt is open");
+        let st = h.state().session.active().unwrap();
+        assert!(st.doc.layer(photocraft_doc::LayerId(masked)).unwrap().mask.is_some(), "nothing deleted yet");
     }
 }

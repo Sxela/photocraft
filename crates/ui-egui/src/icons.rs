@@ -4,36 +4,28 @@
 //! (History: the first shell used Unicode glyphs; half of them rendered as tofu boxes because the
 //! bundled fonts lacked them. Vector icons fix that for good.)
 
-use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
+use craft_ui::buttons::{ButtonVisuals, IconButton, IconButtonStyle};
+use craft_ui::icons::{SvgIconSet, SvgStyle};
 use egui::{Color32, Rect, Response, Sense, Vec2};
 
 use crate::icon_data::ICONS;
 use crate::state::Tool;
 use crate::theme::Tokens;
 
-fn white_icons() -> &'static HashMap<&'static str, Arc<[u8]>> {
-    static MAP: OnceLock<HashMap<&'static str, Arc<[u8]>>> = OnceLock::new();
-    MAP.get_or_init(|| {
-        ICONS
-            .iter()
-            .map(|(name, bytes)| {
-                let svg = String::from_utf8_lossy(bytes).replace("currentColor", "#ffffff").replace("stroke-width=\"2\"", "stroke-width=\"1.75\"");
-                (*name, Arc::from(svg.into_bytes().into_boxed_slice()))
-            })
-            .collect()
-    })
+fn white_icons() -> &'static SvgIconSet {
+    static MAP: OnceLock<SvgIconSet> = OnceLock::new();
+    MAP.get_or_init(|| SvgIconSet::new(ICONS, SvgStyle { current_color: "#ffffff", stroke_width: Some("1.75") }, "bytes://icons/", "square"))
 }
 
 pub fn exists(name: &str) -> bool {
-    white_icons().contains_key(name)
+    white_icons().contains(name)
 }
 
 /// An egui image for an icon, tinted.
 pub fn image(name: &str, size: f32, tint: Color32) -> egui::Image<'static> {
-    let bytes = white_icons().get(name).or_else(|| white_icons().get("square")).cloned().unwrap_or_default();
-    egui::Image::from_bytes(format!("bytes://icons/{name}.svg"), egui::load::Bytes::Shared(bytes)).fit_to_exact_size(Vec2::splat(size)).tint(tint)
+    egui::Image::new(white_icons().source(name)).fit_to_exact_size(Vec2::splat(size)).tint(tint)
 }
 
 /// Paint an icon centred in `rect`.
@@ -93,15 +85,20 @@ fn badge(ctx: &egui::Context, name: &str, p: egui::Pos2, doubled: bool) {
 pub fn tool_icon(t: Tool) -> &'static str {
     match t {
         Tool::Move => "move",
+        Tool::Artboard => "artboard",
         Tool::RectMarquee => "square-dashed",
         Tool::EllipseMarquee => "circle-dashed",
+        Tool::SingleRowMarquee => "marquee-row",
+        Tool::SingleColumnMarquee => "marquee-column",
         Tool::Brush => "brush",
         Tool::Pencil => "pencil",
         Tool::MixerBrush => "palette",
+        Tool::ColorReplacement => "brush-replace",
         Tool::Eraser => "eraser",
         Tool::BackgroundEraser => "eraser-background",
         Tool::MagicEraser => "eraser-magic",
         Tool::Eyedropper => "pipette",
+        Tool::ColorSampler => "sampler",
         Tool::Ruler => "ruler",
         Tool::Note => "message-square",
         Tool::Count => "circle-dot",
@@ -110,11 +107,15 @@ pub fn tool_icon(t: Tool) -> &'static str {
         Tool::MagneticLasso => "lasso-magnetic",
         Tool::MagicWand => "wand-sparkles",
         Tool::Crop => "crop",
+        Tool::PerspectiveCrop => "perspective-crop",
         Tool::Slice => "slice-knife",
         Tool::SliceSelect => "square-dashed-mouse-pointer",
-        Tool::Gradient => "blend",
+        Tool::Frame => "frame-placeholder",
+        Tool::Gradient => "gradient",
         Tool::PaintBucket => "paint-bucket",
         Tool::Type | Tool::VerticalType => "type",
+        Tool::HorizontalTypeMask => "type-mask",
+        Tool::VerticalTypeMask => "type-mask-vertical",
         Tool::Hand => "hand",
         Tool::RotateView => "compass",
         Tool::Zoom => "zoom-in",
@@ -135,6 +136,11 @@ pub fn tool_icon(t: Tool) -> &'static str {
         Tool::QuickSelection => "circle-dashed",
         Tool::ObjectSelection => "square-dashed-mouse-pointer",
         Tool::Pen => "pen-tool",
+        Tool::FreeformPen => "pen-freeform",
+        Tool::CurvaturePen => "pen-curvature",
+        Tool::AddAnchorPoint => "pen-add-anchor",
+        Tool::DeleteAnchorPoint => "pen-delete-anchor",
+        Tool::ConvertPoint => "convert-point",
         Tool::PathSelection => "mouse-pointer-2",
         Tool::DirectSelection => "direct-select",
         Tool::Rectangle => "rectangle-horizontal",
@@ -171,10 +177,26 @@ pub fn button(ui: &mut egui::Ui, name: &str, box_size: f32, selected: bool, tool
 
 /// Square icon button with an explicit glyph size, independent of its hit area.
 pub fn button_with_icon_size(ui: &mut egui::Ui, name: &str, box_size: f32, icon_size: f32, selected: bool, tooltip: &str) -> Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(box_size), Sense::click());
-    let tint = button_chrome(ui, rect, selected, resp.hovered());
-    paint(ui, rect, name, icon_size, tint);
-    if tooltip.is_empty() { resp } else { resp.on_hover_text(tl!(tooltip)) }
+    button_with_icon_size_tip(ui, name, box_size, icon_size, selected, tooltip, true)
+}
+
+/// [`button_with_icon_size`] whose tooltip shows only when `show_tip`; the tooltip text still
+/// names the button (for screen readers and tests) when it is hidden.
+pub fn button_with_icon_size_tip(ui: &mut egui::Ui, name: &str, box_size: f32, icon_size: f32, selected: bool, tooltip: &str, show_tip: bool) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let style = IconButtonStyle {
+        normal: ButtonVisuals { fill: Color32::TRANSPARENT, stroke: egui::Stroke::NONE, icon: t.icon },
+        hovered: ButtonVisuals { fill: t.hover, stroke: egui::Stroke::NONE, icon: t.text },
+        pressed: None,
+        selected: ButtonVisuals { fill: t.accent_soft, stroke: egui::Stroke::new(1.0, t.accent_border), icon: t.accent_text },
+        corner_radius: t.radius_sm.into(),
+        focus_stroke: egui::Stroke::new(1.0, t.accent),
+    };
+    let label = if tooltip.is_empty() { name } else { tl!(tooltip) };
+    let resp = IconButton::new(label, Vec2::splat(box_size), &style).selected(selected).show(ui, |ui, rect, tint| {
+        paint(ui, rect, name, icon_size, tint);
+    });
+    if tooltip.is_empty() || !show_tip { resp } else { resp.on_hover_text(label) }
 }
 
 /// Rail toggle: "on" gets a quiet filled background and full-strength icon (no accent).
@@ -189,6 +211,7 @@ pub fn rail_button(ui: &mut egui::Ui, name: &str, box_size: f32, on: bool, toolt
     }
     let tint = if on || resp.hovered() { t.text } else { t.text_faint };
     paint(ui, rect, name, (box_size * 0.52).round(), tint);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), on, tl!(tooltip)));
     resp.on_hover_text(tl!(tooltip))
 }
 
@@ -201,15 +224,114 @@ mod tests {
         for t in Tool::ALL {
             assert!(exists(tool_icon(t)), "{t:?}");
         }
+        assert_eq!(tool_icon(Tool::Gradient), "gradient");
+        assert_ne!(tool_icon(Tool::Gradient), tool_icon(Tool::PaintBucket));
     }
 
     #[test]
-    fn icons_are_recoloured() {
-        let m = white_icons();
-        assert!(m.len() >= 60);
-        for (name, b) in m.iter() {
-            let s = std::str::from_utf8(b).unwrap();
-            assert!(!s.contains("currentColor"), "{name}");
+    fn gradient_tool_icon_rasterizes_left_to_right_ramp() {
+        let egui::ImageSource::Bytes { bytes, .. } = white_icons().source(tool_icon(Tool::Gradient)) else {
+            panic!("icon source must be embedded bytes");
+        };
+        let image = egui_extras::image::load_svg_bytes_with_size(
+            bytes.as_ref(),
+            egui::load::SizeHint::Size { width: 24, height: 24, maintain_aspect_ratio: true },
+            &Default::default(),
+        )
+        .unwrap();
+        let left_alpha = image[(6, 12)].a();
+        let mid_alpha = image[(12, 12)].a();
+        let right_alpha = image[(18, 12)].a();
+        assert!(
+            left_alpha > mid_alpha && mid_alpha > right_alpha,
+            "interior ramp should fade from left ({left_alpha}) through middle ({mid_alpha}) to right ({right_alpha})"
+        );
+    }
+
+    #[test]
+    fn shared_catalog_preserves_existing_icons() {
+        // Characterize the pre-extraction loader across every real asset. The UI's tint,
+        // stroke weight and cache keys must survive shared-crate upgrades unchanged.
+        assert!(ICONS.len() >= 60);
+        for (name, original) in ICONS {
+            let expected = String::from_utf8_lossy(original).replace("currentColor", "#ffffff").replace("stroke-width=\"2\"", "stroke-width=\"1.75\"");
+            let egui::ImageSource::Bytes { uri, bytes } = white_icons().source(name) else { panic!("expected SVG bytes") };
+            assert_eq!(uri.as_ref(), format!("bytes://icons/{name}.svg"));
+            assert_eq!(bytes.as_ref(), expected.as_bytes(), "{name}");
+            assert!(!std::str::from_utf8(&bytes).unwrap().contains("currentColor"), "{name}");
+        }
+    }
+
+    #[test]
+    fn shared_catalog_preserves_fallback() {
+        let egui::ImageSource::Bytes { uri, bytes } = white_icons().source("missing-icon") else { panic!("expected SVG bytes") };
+        let egui::ImageSource::Bytes { bytes: fallback, .. } = white_icons().source("square") else { panic!("expected SVG bytes") };
+        assert_eq!(uri.as_ref(), "bytes://icons/missing-icon.svg");
+        assert_eq!(bytes.as_ref(), fallback.as_ref());
+        assert!(!exists("missing-icon"));
+    }
+
+    #[test]
+    fn shared_button_preserves_theme_painting_and_pointer_responses() {
+        // The unchanged chrome helper is the pre-extraction paint oracle. Keyboard focus
+        // and accessibility metadata are deliberate additions, covered in craft-ui.
+        fn frame(
+            ctx: &egui::Context,
+            events: Vec<egui::Event>,
+            selected: bool,
+            enabled: bool,
+            legacy: bool,
+        ) -> (egui::Response, Vec<egui::epaint::ClippedShape>) {
+            let mut response = None;
+            let mut output = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                response = Some(
+                    ui.add_enabled_ui(enabled, |ui| {
+                        if legacy {
+                            let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
+                            let tint = button_chrome(ui, rect, selected, response.hovered());
+                            paint(ui, rect, "square", (28.0_f32 * 0.52).round(), tint);
+                            response
+                        } else {
+                            button(ui, "square", 28.0, selected, "")
+                        }
+                    })
+                    .inner,
+                );
+            });
+            output.textures_delta.clear();
+            (response.unwrap(), output.shapes)
+        }
+        for theme in crate::theme::ThemeKind::ALL {
+            for selected in [false, true] {
+                for enabled in [false, true] {
+                    let old = egui::Context::default();
+                    let new = egui::Context::default();
+                    for ctx in [&old, &new] {
+                        crate::theme::apply(ctx, theme);
+                        egui_extras::install_image_loaders(ctx);
+                    }
+                    let mut center = egui::Pos2::ZERO;
+                    for step in 0..7 {
+                        let events = match step {
+                            2 => vec![egui::Event::PointerMoved(center)],
+                            3 | 4 => vec![egui::Event::PointerButton {
+                                pos: center,
+                                button: egui::PointerButton::Primary,
+                                pressed: step == 3,
+                                modifiers: egui::Modifiers::NONE,
+                            }],
+                            5 => vec![egui::Event::PointerMoved(egui::pos2(300.0, 200.0))],
+                            _ => vec![],
+                        };
+                        let (a, before) = frame(&old, events.clone(), selected, enabled, true);
+                        let (b, after) = frame(&new, events, selected, enabled, false);
+                        center = a.rect.center();
+                        assert_eq!(a.rect, b.rect);
+                        assert_eq!((a.clicked(), a.hovered(), a.is_pointer_button_down_on()), (b.clicked(), b.hovered(), b.is_pointer_button_down_on()));
+                        assert_eq!(before, after, "{theme:?}, selected={selected}, enabled={enabled}, step={step}");
+                    }
+                }
+            }
         }
     }
 
@@ -218,9 +340,10 @@ mod tests {
         for size in [14_u32, 28] {
             let mut coverage = Vec::new();
             for name in ["symmetry-vertical", "symmetry-horizontal", "symmetry-diagonal", "symmetry-dual"] {
-                let bytes = white_icons().get(name).unwrap();
+                assert!(white_icons().contains(name));
+                let egui::ImageSource::Bytes { bytes, .. } = white_icons().source(name) else { panic!("icon source must be embedded bytes") };
                 let image = egui_extras::image::load_svg_bytes_with_size(
-                    bytes,
+                    bytes.as_ref(),
                     egui::load::SizeHint::Size { width: size, height: size, maintain_aspect_ratio: true },
                     &Default::default(),
                 )

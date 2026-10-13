@@ -527,6 +527,11 @@ impl Session {
     /// stays unchanged. The document is unlocked at once. False if no such job is running.
     pub fn cancel_job(&mut self, id: JobId) -> bool {
         let Some(i) = self.jobs.running.iter().position(|r| r.id == id) else { return false };
+        // A print worker can already have handed the job to the OS. Discarding its result
+        // would falsely report cancellation; removal belongs to the system print queue.
+        if matches!(self.jobs.running[i].command.as_str(), "file.print" | "file.printOneCopy") {
+            return false;
+        }
         let job = self.jobs.running.remove(i);
         job.ctx.cancel();
         self.end_job(&job, JobOutcome::Cancelled);
@@ -562,7 +567,7 @@ impl Session {
 
     /// Running jobs followed by the last few that ended (newest last), for `jobs.list`.
     pub fn jobs_with_recent(&self) -> Vec<JobInfo> {
-        self.jobs.recent.iter().cloned().chain(self.jobs()).collect()
+        self.jobs().into_iter().chain(self.jobs.recent.iter().cloned()).collect()
     }
 
     /// The running job that locks document `doc`, if any.
@@ -615,9 +620,19 @@ impl Session {
         if let Some(gate) = self.authorize {
             gate(id, &params)?;
         }
+        // Last Filter runs as the filter it repeats: journaled, recorded in an action, faded and
+        // run as a job like that filter, so a recorded step replays the same filter anywhere
+        // (#3089), as Transform Again records its transform (#1440). With no filter yet it falls
+        // through to its own precondition.
+        if id == "filter.lastFilter"
+            && let Some((filter, p)) = crate::filters::last_filter(self).filter(|(f, _)| f != id)
+        {
+            return self.dispatch(&filter, p, background);
+        }
         if id == "file.new" {
             crate::document_preset_cmds::validate_new_params(self, &params)?;
         }
+        crate::param_check::check(spec, &params)?;
         crate::filters::validate_params(id, &params)?;
         // A floating selection drops before any other command (Undo puts it back instead).
         if let Some(v) = crate::float_cmds::before_command(self, id)? {
@@ -625,7 +640,7 @@ impl Session {
         }
         // Pixel commands follow the Channels panel target unless the caller names one.
         let run_params = crate::channel_cmds::inject_target(self, id, crate::commands::inject_kind(id, params.clone()));
-        if let Err(why) = crate::smart_cmds::target_enabled(self, spec, &params).unwrap_or_else(|| self.precondition(spec, &run_params)) {
+        if let Err(why) = self.explicit_layer_enabled(spec, &params).unwrap_or_else(|| self.precondition(spec, &run_params)) {
             return Err(EngineError::Disabled(id.to_string(), why));
         }
         if let Some(why) = self.job_conflict(id, spec.journal) {
@@ -638,11 +653,20 @@ impl Session {
         self.coalesce_request = params.get("coalesce").and_then(Value::as_str).map(str::to_string);
         self.color_restrict = crate::channel_cmds::color_restriction(self, id, &run_params);
         self.jobs.spawn = background;
+        // Commands this one runs on its own behalf journal after this mark (#3067).
+        let nested_from = self.journal.len();
+        // A replayable command is recorded as one step, so recording pauses while it runs: an
+        // action it plays (a script step) must not flush the steps it ran so far into the action
+        // being recorded, nor move the recording mark past the entries it is about to replace.
+        let recording = if spec.journal && crate::actions_cmds::replayable(id) { self.actions.recording.take() } else { None };
         // Last-resort guard (AGENTS.md, Never crash): a command that panics anyway fails with an
         // error instead of taking the app down. `edit` only commits a document after its closure
         // returns, so the documents are unchanged.
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, &run_params)))
             .unwrap_or_else(|_| Err(EngineError::Other(format!("`{id}` failed with an internal error (logged); the document is unchanged"))));
+        if self.actions.recording.is_none() {
+            self.actions.recording = recording;
+        }
         self.jobs.spawn = false;
         self.coalesce_request = None;
         self.color_restrict = None;
@@ -662,14 +686,20 @@ impl Session {
                 Ok(Started::Job(jid))
             }
             (Ok(v), None) => {
-                self.after_command(id, params, spec.journal);
+                self.after_command(id, params, spec.journal, Some(nested_from));
                 Ok(Started::Done(v))
             }
         }
     }
 
     /// Bookkeeping after a command (or a job's apply) succeeded.
-    fn after_command(&mut self, id: &str, params: Value, journal: bool) {
+    ///
+    /// `nested_from` is the journal length when the command started. A replayable command stands
+    /// for the commands it ran itself (Straighten runs Image Rotation and Crop): their entries are
+    /// dropped, so a recorded action replays the command once, not its steps as well (#3067).
+    /// Edit › Transform › Again (and Again on a Copy) is not replayable and keeps the concrete
+    /// steps it ran instead.
+    fn after_command(&mut self, id: &str, params: Value, journal: bool, nested_from: Option<usize>) {
         // A layer-mask view ends when another layer becomes active (#196).
         if let Some(st) = self.active_mut() {
             crate::mask_view_cmds::fix(st);
@@ -677,7 +707,13 @@ impl Session {
         crate::edit_menu_cmds::after_command(self, id);
         crate::automate_cmds::after_command(self, id);
         self.sync_preset_store();
-        if journal && !crate::brush_cmds::coalesce_journal(self, id, &params) {
+        if !journal {
+            return;
+        }
+        if let Some(from) = nested_from.filter(|_| crate::actions_cmds::replayable(id)) {
+            self.journal.truncate(from);
+        }
+        if !crate::brush_cmds::coalesce_journal(self, id, &params) {
             self.journal.push((id.to_string(), params));
         }
     }
@@ -716,18 +752,25 @@ impl Session {
         };
         self.coalesce_request = coalesce.clone();
         self.color_restrict = *color_restrict;
+        // Apply-time hooks can dispatch commands too. Keep the same single-step recording
+        // contract as synchronous dispatch without truncating work done while the worker ran.
+        let nested_from = self.journal.len();
+        let recording = if *journal && crate::actions_cmds::replayable(command) { self.actions.recording.take() } else { None };
         let r = match apply {
             Some(f) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(self, payload)))
                 .unwrap_or_else(|_| Err(EngineError::Other(format!("`{label}` failed with an internal error (logged); the document is unchanged")))),
             None => Err(EngineError::Other("internal error: job applied twice".into())),
         };
+        if self.actions.recording.is_none() {
+            self.actions.recording = recording;
+        }
         self.coalesce_request = None;
         self.color_restrict = None;
         // Finish successful command bookkeeping on the document the job edited.
         // Restoring the viewed document first would attribute Fade and slice updates
         // to that document instead, when the user switched tabs mid-job.
         if r.is_ok() {
-            self.after_command(command, params.clone(), *journal);
+            self.after_command(command, params.clone(), *journal, Some(nested_from));
         }
         // Keep the user's active document unless the job opened a new one.
         // This also restores the selection when the apply step returned an error.
@@ -784,11 +827,17 @@ pub fn specs() -> Vec<crate::commands::CommandSpec> {
                 None | Some(Value::Null) => {
                     let n = s.jobs.running.len();
                     s.cancel_all_jobs();
-                    Ok(json!({"cancelled": n}))
+                    Ok(json!({"cancelled": n.saturating_sub(s.jobs.running.len())}))
                 }
                 Some(v) => {
                     let id = v.as_u64().ok_or_else(|| EngineError::BadParams { cmd: "jobs.cancel".into(), msg: "`job` must be a job id".into() })?;
-                    if s.cancel_job(JobId(id)) { Ok(json!({"cancelled": 1})) } else { Err(EngineError::Other(format!("no running job {id}"))) }
+                    if s.cancel_job(JobId(id)) {
+                        Ok(json!({"cancelled": 1}))
+                    } else if s.job(JobId(id)).is_some() {
+                        Err(EngineError::Other("printing cannot be cancelled here; use the system print queue".into()))
+                    } else {
+                        Err(EngineError::Other(format!("no running job {id}")))
+                    }
                 }
             },
             journal: false,

@@ -270,7 +270,7 @@ pub struct Texture {
     pub scale: f32,
     /// -1..1 (Photoshop's -150..150 mapped to ±1).
     pub brightness: f32,
-    /// -1..1.
+    /// -1..1: Photoshop's -50..0 mapped to -1..0 and its 0..100 to 0..1.
     pub contrast: f32,
     /// Apply the texture to every dab (enables depth jitter) instead of once to the stroke.
     pub each_tip: bool,
@@ -279,6 +279,21 @@ pub struct Texture {
     pub depth: f32,
     /// Depth jitter / control (per tip only); `minimum` is Minimum Depth.
     pub depth_jitter: Dynamic,
+}
+
+impl Texture {
+    /// A pattern value (0..1) after Brightness, Contrast and Invert: the value the mode combines
+    /// with the brush. Measured against Photoshop (#3340): Brightness shifts the pattern by
+    /// `brightness / 255` (±150 moves it 150 levels of 255, not all the way to white or black);
+    /// positive Contrast steepens it around mid-grey by `1 / (1 − c/100)` after the shift (100 is
+    /// a threshold), negative Contrast flattens it by `1 + c/100` before the shift; Invert is last.
+    pub fn level(&self, v: f32) -> f32 {
+        let b = if self.brightness.is_finite() { self.brightness.clamp(-1.0, 1.0) * (150.0 / 255.0) } else { 0.0 };
+        let c = if self.contrast.is_finite() { self.contrast.clamp(-1.0, 1.0) } else { 0.0 };
+        let x = if c >= 0.0 { (v + b - 0.5) / (1.0 - c).max(1e-4) + 0.5 } else { (v - 0.5) * (1.0 + c / 2.0) + 0.5 + b };
+        let x = if x.is_finite() { x.clamp(0.0, 1.0) } else { 0.5 };
+        if self.invert { 1.0 - x } else { x }
+    }
 }
 
 impl Default for Texture {
@@ -426,6 +441,8 @@ impl Default for Pose {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Smoothing {
+    /// Switch smoothing off without discarding its amount or mode. Old presets remain enabled.
+    pub enabled: bool,
     /// 0..1.
     pub amount: f32,
     /// Lazy-mouse: paint only when the pointer pulls a string of `amount × 100 px` taut.
@@ -440,7 +457,7 @@ pub struct Smoothing {
 
 impl Default for Smoothing {
     fn default() -> Self {
-        Self { amount: 0.0, pulled_string: false, catch_up: true, catch_up_on_end: true, adjust_for_zoom: true }
+        Self { enabled: true, amount: 0.0, pulled_string: false, catch_up: true, catch_up_on_end: true, adjust_for_zoom: true }
     }
 }
 
@@ -469,6 +486,11 @@ pub struct BrushSettings {
     pub pressure_opacity: bool,
     /// Straight RGBA colour (display RGB). Commands fill it from the foreground colour.
     pub color: [f32; 4],
+    /// The inks `color` was picked as (its sRGB colour, the CMYK values), for a CMYK target: the
+    /// stroke paints exactly these, since an sRGB round trip does not give them back (#4344).
+    /// Only valid while `color` is that sRGB colour; ignored with Color Dynamics.
+    #[serde(skip)]
+    pub color_cmyk: Option<([f32; 3], [f32; 4])>,
     /// Background colour for Color Dynamics' foreground/background jitter.
     pub background: [f32; 4],
     /// Erase instead of paint.
@@ -485,6 +507,10 @@ pub struct BrushSettings {
     pub flip_y: bool,
     /// Pencil: no anti-aliasing (coverage is 0 or 1).
     pub aliased: bool,
+    /// With `aliased`, a square tip: every pixel of the dab's whole-pixel square
+    /// ([`crate::grid_square`]), whatever its angle or roundness. The Eraser's Block mode.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub square: bool,
     // --- dynamics sections ---
     pub shape_dynamics: ShapeDynamics,
     pub scattering: Scattering,
@@ -524,6 +550,7 @@ impl Default for BrushSettings {
             pressure_size: true,
             pressure_opacity: false,
             color: [0.0, 0.0, 0.0, 1.0],
+            color_cmyk: None,
             background: [1.0, 1.0, 1.0, 1.0],
             erase: false,
             mode: BlendMode::Normal,
@@ -533,6 +560,7 @@ impl Default for BrushSettings {
             flip_x: false,
             flip_y: false,
             aliased: false,
+            square: false,
             shape_dynamics: ShapeDynamics::default(),
             scattering: Scattering::default(),
             texture: Texture::default(),

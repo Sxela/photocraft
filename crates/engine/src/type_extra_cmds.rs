@@ -14,7 +14,9 @@ use photocraft_text::render::PathEl;
 use serde_json::{Value, json};
 
 use crate::commands::{CommandSpec, layer_param};
-use crate::type_cmds::{format_targets, has_format_target, is_auto_named, layer_name, refresh, replace_text, style_paragraphs, style_range, with_text_targets};
+use crate::type_cmds::{
+    check_text_unlocked, format_targets, has_format_target, is_auto_named, layer_name, refresh, replace_text, style_paragraphs, style_range, with_text_targets,
+};
 use crate::{EngineError, Result, Session};
 
 /// Photoshop's Paste Lorem Ipsum filler.
@@ -42,6 +44,7 @@ fn has_point_text(s: &Session) -> std::result::Result<(), String> {
     match active_text(s)?.shape {
         TextShape::Point => Ok(()),
         TextShape::Box { .. } => Err("the type layer is already paragraph text".into()),
+        TextShape::Path { .. } => Err("detach the type layer from its path first".into()),
     }
 }
 
@@ -49,6 +52,7 @@ fn has_box_text(s: &Session) -> std::result::Result<(), String> {
     match active_text(s)?.shape {
         TextShape::Box { .. } => Ok(()),
         TextShape::Point => Err("the type layer is already point text".into()),
+        TextShape::Path { .. } => Err("the type layer is path text".into()),
     }
 }
 
@@ -67,6 +71,7 @@ fn has_defaults(s: &Session) -> std::result::Result<(), String> {
 /// Edits a type layer as one history step and re-renders it.
 fn with_text<R>(s: &mut Session, p: &Value, label: &str, f: impl FnOnce(&mut TextLayer, &Document) -> Result<R>) -> Result<R> {
     let id = layer_param(s, p)?;
+    check_text_unlocked(&s.active().ok_or(EngineError::NoDocument)?.doc, id)?;
     s.edit(label, |doc, _| {
         let snapshot = doc.clone();
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
@@ -276,7 +281,7 @@ fn contours(els: &[PathEl]) -> Vec<Vec<Knot>> {
 /// which reproduces the nonzero fill under Photoshop's per-subpath path operations.
 pub fn text_path(doc: &Document, t: &TextLayer) -> Path {
     let l = layout(doc, t);
-    let warp = photocraft_text::render::layout_warp(&l, t.warp.as_ref());
+    let warp = photocraft_text::render::layout_deform(&l, t);
     let mut subpaths = Vec::new();
     for glyph in photocraft_text::render::outlines(&l, &t.transform, warp.as_ref()) {
         let cs = contours(&glyph);
@@ -316,6 +321,95 @@ fn convert_to_shape(s: &mut Session, p: &Value) -> Result<Value> {
         Ok(n)
     })?;
     Ok(json!({"layer": id.0, "subpaths": n}))
+}
+
+// ---------- type on a path ----------
+
+/// Largest anchor count of a path that type can follow (a hostile document cannot make the
+/// layout walk millions of segments).
+const MAX_TYPE_PATH_KNOTS: usize = 100_000;
+
+/// The subpath `type.attachToPath` follows, in document space: the work path (default) or a
+/// shape layer's path (`"shape":id`), subpath `"subpath"` (default 0).
+fn path_source(doc: &Document, p: &Value) -> Result<Subpath> {
+    let bad = |m: &str| EngineError::BadParams { cmd: "type.attachToPath".into(), msg: m.into() };
+    let path = match p.get("shape") {
+        None | Some(Value::Null) => doc.work_path.as_ref().ok_or_else(|| bad("the document has no work path; draw a path or pass \"shape\":layerId"))?,
+        Some(v) => {
+            let id = v.as_u64().ok_or_else(|| bad("\"shape\" must be a layer id"))?;
+            match doc.layer(LayerId(id)).map(|l| &l.content) {
+                Some(LayerContent::Shape(sh)) => &sh.path,
+                Some(_) => return Err(bad("\"shape\" is not a shape layer")),
+                None => return Err(EngineError::NoLayer(LayerId(id))),
+            }
+        }
+    };
+    let index = match p.get("subpath") {
+        None | Some(Value::Null) => 0,
+        Some(v) => v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| bad("\"subpath\" must be a non-negative index"))?,
+    };
+    let sub = path.subpaths.get(index).ok_or_else(|| bad("the path has no such subpath"))?;
+    if sub.knots.len() < 2 {
+        return Err(bad("the subpath needs at least two anchor points"));
+    }
+    if sub.knots.len() > MAX_TYPE_PATH_KNOTS {
+        return Err(bad("the subpath has too many anchor points"));
+    }
+    Ok(sub.clone())
+}
+
+fn attach_to_path(s: &mut Session, p: &Value) -> Result<Value> {
+    let bad = |m: &str| EngineError::BadParams { cmd: "type.attachToPath".into(), msg: m.into() };
+    let start = match p.get("start") {
+        None | Some(Value::Null) => 0.0,
+        Some(v) => v.as_f64().filter(|n| n.is_finite()).ok_or_else(|| bad("\"start\" must be a finite number of pixels"))? as f32,
+    };
+    let flip = match p.get("flip") {
+        None | Some(Value::Null) => false,
+        Some(v) => v.as_bool().ok_or_else(|| bad("\"flip\" must be true or false"))?,
+    };
+    let id = layer_param(s, p)?;
+    let doc = &s.active().ok_or(EngineError::NoDocument)?.doc;
+    if doc.effective_locks(id).all {
+        return Err(EngineError::Other("the type layer is locked".into()));
+    }
+    let sub = path_source(doc, p)?;
+    with_text(s, p, "Type on a Path", |t, _| {
+        // The path lives in document space; the type layer keeps it in its own text space, so
+        // the type lands on the path where it is drawn.
+        let inv = t.transform.inverse().ok_or_else(|| EngineError::Other("the type layer's transform cannot be inverted".into()))?;
+        let map = |q: Point| inv.apply(q);
+        let knots = sub.knots.iter().map(|k| Knot { anchor: map(k.anchor), in_ctrl: map(k.in_ctrl), out_ctrl: map(k.out_ctrl), smooth: k.smooth }).collect();
+        let path = Subpath { closed: sub.closed, knots, op: PathOp::Combine };
+        if !path.knots.iter().all(|k| [k.anchor, k.in_ctrl, k.out_ctrl].iter().all(|q| q.x.is_finite() && q.y.is_finite())) {
+            return Err(EngineError::Other("the path cannot be mapped into the type layer".into()));
+        }
+        t.shape = TextShape::Path { path, start, flip };
+        Ok(())
+    })?;
+    Ok(json!({"layer": id.0, "start": start, "flip": flip}))
+}
+
+fn is_path_text(s: &Session) -> std::result::Result<(), String> {
+    match active_text(s)?.shape {
+        TextShape::Path { .. } => Ok(()),
+        _ => Err("the type layer is not on a path".into()),
+    }
+}
+
+fn detach_from_path(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = layer_param(s, p)?;
+    with_text(s, p, "Release Type from Path", |t, _| {
+        if !matches!(t.shape, TextShape::Path { .. }) {
+            return Err(EngineError::Other("the type layer is not on a path".into()));
+        }
+        // Point text starts where the type started on the path.
+        let origin = photocraft_text::warp::Warp::on_path(&t.shape).map_or((0.0, 0.0), |w| w.apply(0.0, 0.0));
+        t.shape = TextShape::Point;
+        t.transform = then_translate(&t.transform, origin.0, origin.1);
+        Ok(())
+    })?;
+    Ok(json!({"layer": id.0}))
 }
 
 // ---------- warp ----------
@@ -436,6 +530,33 @@ pub fn missing_fonts(doc: &Document) -> Vec<String> {
     out
 }
 
+/// Font families used by a type layer that the font database cannot supply.
+pub fn missing_fonts_in_layer(t: &TextLayer) -> Vec<String> {
+    let have = installed_families();
+    let mut out: Vec<String> = Vec::new();
+    for r in t.char_runs() {
+        let f = r.style.font_family;
+        if !f.is_empty() && !have.contains(&f.to_lowercase()) && !out.contains(&f) {
+            out.push(f);
+        }
+    }
+    out
+}
+
+/// Warnings for missing font families in `doc`.
+pub fn missing_font_warnings(doc: &Document) -> Vec<String> {
+    fonts_to_warnings(missing_fonts(doc))
+}
+
+/// Warnings for missing font families in `layer`.
+pub fn missing_font_warnings_for_layer(t: &TextLayer) -> Vec<String> {
+    fonts_to_warnings(missing_fonts_in_layer(t))
+}
+
+fn fonts_to_warnings(fonts: Vec<String>) -> Vec<String> {
+    fonts.into_iter().map(|font| format!("font '{font}' is not installed; text may render using a fallback face")).collect()
+}
+
 /// Replace missing families per `map` (missing → installed; unmapped ones → the default family).
 fn replace_fonts(s: &mut Session, map: &serde_json::Map<String, Value>, all: bool) -> Result<Value> {
     let d = s.active().ok_or(EngineError::NoDocument)?;
@@ -554,10 +675,19 @@ pub fn specs() -> Vec<CommandSpec> {
             "type.warpText",
             "Warp Text…",
             &["Type"],
-            r##"{"layer":id? or "layers":[id,…]? (default selected Type layers),"style":"none|arc|arcLower|arcUpper|arch|bulge|shellLower|shellUpper|flag|wave|fish|rise|fisheye|inflate|squeeze|twist"="arc","bend":-100..100=50,"horizontalDistortion":-100..100=0,"verticalDistortion":-100..100=0,"orientation":"horizontal|vertical"="horizontal"}"##,
+            r##"{"layer":id? or "layers":[id,…]? (default selected Type layers),"style":"none|arc|arcLower|arcUpper|arch|bulge|shellLower|shellUpper|flag|wave|fish|rise|fisheye|inflate|squeeze|twist"="arc","orientation":"horizontal|vertical"="horizontal","bend":-100..100=50,"horizontalDistortion":-100..100=0,"verticalDistortion":-100..100=0}"##,
             has_format_target,
             warp_text
         ),
+        spec!(
+            "type.attachToPath",
+            "Type on a Path",
+            &[],
+            r##"{"layer":id? (default active Type layer),"shape":layerId? (a shape layer; default the work path),"subpath":index=0,"start":px=0 (offset along the path),"flip":bool=false (run along the path the other way, on its other side)}"##,
+            has_text,
+            attach_to_path
+        ),
+        spec!("type.detachFromPath", "Release Type from Path", &[], LP, is_path_text, detach_from_path),
         spec!("type.updateAllTextLayers", "Update All Text Layers", &["Type"], "{}", any_text, |s, _| update_all(s)),
         spec!("type.replaceAllMissingFonts", "Replace All Missing Fonts", &["Type"], "{} (with the default family)", any_text, |s, _| replace_fonts(
             s,

@@ -24,6 +24,23 @@ pub fn is_preset_file(name: &str) -> bool {
     PRESET_EXTS.contains(&ext(name).as_str())
 }
 
+/// Import from a gradient picker through the same preset command as File › Open.
+pub(crate) fn import_gradients_dialog(app: &mut PhotocraftApp) {
+    let result = app.pick_file_bytes_filtered(&["grd"], |app, name, bytes| {
+        if ext(&name) != "grd" {
+            return Err(tl!("Choose a gradient file (.grd).").into());
+        }
+        open(app, &name, &bytes).ok_or_else(|| tl!("Choose a gradient file (.grd).").to_string())??;
+        Ok(Value::Null)
+    });
+    if let Err(error) = result
+        && error != crate::file_dialog::CANCELLED
+    {
+        app.ui.status = error;
+        app.ui.status_error = true;
+    }
+}
+
 /// Command params for the file: a real path keeps the journal small; browser files arrive as bytes.
 fn source(name: &str, bytes: &[u8]) -> Value {
     #[cfg(not(target_arch = "wasm32"))]
@@ -53,15 +70,25 @@ pub fn open(app: &mut PhotocraftApp, name: &str, bytes: &[u8]) -> Option<Result<
         // A background import (#210): `jobs_ui` reports the count when it lands.
         if r.get("pending").and_then(Value::as_bool) == Some(true) {
             app.ui.status_error = false;
-            app.ui.status = format!("Importing {what} from {stem}…");
+            let template = "Importing {what} from {file}…";
+            app.ui.status = crate::i18n::fmt(tl!(template), &[("what", tl!(what)), ("file", &stem)]);
             return;
         }
         let n = r.get("count").and_then(Value::as_u64).unwrap_or(0);
         let warnings: Vec<String> = r.get("warnings").and_then(|w| serde_json::from_value(w.clone()).ok()).unwrap_or_default();
         app.ui.status_error = false;
+        let (one, other) = if what == "brushes" {
+            ("Imported {n} brush from {file}", "Imported {n} brushes from {file}")
+        } else {
+            ("Imported {n} gradient from {file}", "Imported {n} gradients from {file}")
+        };
+        let imported = crate::i18n::fmt(&crate::i18n::trn(crate::i18n::current(), n, one, other), &[("file", &stem)]);
         app.ui.status = match warnings.first() {
-            Some(w) => format!("Imported {n} {what} from {stem} ({} notes: {w})", warnings.len()),
-            None => format!("Imported {n} {what} from {stem}"),
+            Some(warning) => {
+                let template = "{message} (notes: {n}; {warning})";
+                crate::i18n::fmt(tl!(template), &[("message", &imported), ("n", &warnings.len().to_string()), ("warning", warning)])
+            }
+            None => imported,
         };
         if what == "brushes" {
             // Show them: Brush Settings › Brushes tab.

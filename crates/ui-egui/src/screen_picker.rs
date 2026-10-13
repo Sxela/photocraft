@@ -250,6 +250,27 @@ pub fn cancel(ctx: &Context) {
     lock(&r).answer = Some(Ok(None));
     ctx.request_repaint();
 }
+
+/// The picker window: hidden until its snapshot has been painted (#3210).
+fn viewport_builder(ctx: &Context, image: &ScreenImage) -> egui::ViewportBuilder {
+    let mut builder = egui::ViewportBuilder::default()
+        .with_title(tl!("PhotoCraft — Screen Color Picker"))
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_position(image.position / ctx.zoom_factor())
+        .with_inner_size(image.size / ctx.zoom_factor())
+        // Not `AlwaysOnTop` here: a monitor-sized window created topmost makes the DX12 backend
+        // fail its swapchain creation (0x887A0001) and the app panics. The level is raised once
+        // the first frame has been painted, in `show`.
+        // Do not expose the native window's empty first frame over the desktop.
+        // The viewport is made visible after its snapshot has been painted below.
+        .with_visible(false)
+        .with_clamp_size_to_monitor_size(false);
+    if let Some(monitor) = image.monitor {
+        builder = builder.with_monitor(monitor);
+    }
+    builder
+}
 pub fn show(ctx: &Context) {
     let r = runtime(ctx);
     let s = lock(&r);
@@ -260,18 +281,11 @@ pub fn show(ctx: &Context) {
         let Snapshot { image, texture, conversion } = snapshot;
         let shared = r.clone();
         let vid = egui::ViewportId::from_hash_of(("screen-color", generation, n));
-        let mut builder = egui::ViewportBuilder::default()
-            .with_title("PhotoCraft — Screen Color Picker")
-            .with_decorations(false)
-            .with_resizable(false)
-            .with_position(image.position / ctx.zoom_factor())
-            .with_inner_size(image.size / ctx.zoom_factor())
-            .with_window_level(egui::WindowLevel::AlwaysOnTop)
-            .with_clamp_size_to_monitor_size(false);
-        if let Some(monitor) = image.monitor {
-            builder = builder.with_monitor(monitor);
-        }
-        ctx.show_viewport_deferred(vid, builder, move |ui, _| {
+        let builder = viewport_builder(ctx, &image);
+        // Immediate, so it paints inside the main window's own frame: as a deferred viewport the
+        // main window stopped being redrawn on Windows (OpenGL) once the picker was up, so a click
+        // or Esc was never turned into an answer and the overlay could not be left.
+        ctx.show_viewport_immediate(vid, builder, move |ui, _| {
             {
                 let s = lock(&shared);
                 if s.generation != generation || s.owner.is_none() {
@@ -322,6 +336,14 @@ pub fn show(ctx: &Context) {
                     ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
                 }
             });
+            // Showing a new native viewport before this frame is painted can briefly cover
+            // the screen with the window's default white clear color.
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            // Once per picker window: `show` runs every frame, so a local flag would resend it.
+            let raised = Id::new(("screen-picker-raised", ui.ctx().viewport_id()));
+            if !ui.ctx().data_mut(|d| std::mem::replace(d.get_temp_mut_or_default::<bool>(raised), true)) {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
+            }
         });
     }
 }
@@ -374,6 +396,17 @@ mod tests {
             rgba: vec![255, 0, 0, 255, 0, 128, 255, 255],
             profile: None,
         }
+    }
+    #[test]
+    fn screen_picker_viewport_starts_hidden_until_its_snapshot_is_painted() {
+        let builder = viewport_builder(&Context::default(), &image());
+        assert_eq!(builder.visible, Some(false));
+    }
+    #[test]
+    fn screen_picker_viewport_is_not_created_always_on_top() {
+        // Creating the monitor-sized window topmost fails DX12 swapchain creation (Windows).
+        let builder = viewport_builder(&Context::default(), &image());
+        assert_eq!(builder.window_level, None);
     }
     #[test]
     fn pixel_mapping_handles_display_edges_negative_origins_and_hidpi() {

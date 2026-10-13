@@ -60,6 +60,34 @@ fn show_snap_extras_and_screen_modes_are_state() {
 }
 
 #[test]
+fn full_screen_and_maximized_never_overlap_on_windows() {
+    use egui::ViewportCommand::{Fullscreen, Maximized};
+    // Maximized → full screen: un-maximize first, and remember it.
+    let (cmds, remember) = screen_mode_commands(true, false, true, false, "fullScreenWithMenuBar");
+    assert_eq!(cmds, vec![Maximized(false), Fullscreen(true)]);
+    assert!(remember);
+    // Full screen → the other full-screen mode: nothing about maximized changes.
+    let (cmds, remember) = screen_mode_commands(true, true, false, true, "fullScreen");
+    assert_eq!(cmds, vec![Fullscreen(true)]);
+    assert!(remember);
+    // Full screen → Standard: maximize again after leaving, then forget.
+    let (cmds, remember) = screen_mode_commands(true, true, false, true, "standard");
+    assert_eq!(cmds, vec![Fullscreen(false), Maximized(true)]);
+    assert!(!remember);
+    // A window that was not maximized goes in and out untouched.
+    let (cmds, remember) = screen_mode_commands(true, false, false, false, "fullScreen");
+    assert_eq!((cmds, remember), (vec![Fullscreen(true)], false));
+    let (cmds, remember) = screen_mode_commands(true, true, false, false, "standard");
+    assert_eq!((cmds, remember), (vec![Fullscreen(false)], false));
+    // Standard while already standard never maximizes.
+    let (cmds, _) = screen_mode_commands(true, false, false, true, "standard");
+    assert_eq!(cmds, vec![Fullscreen(false)]);
+    // Elsewhere the commands are as before.
+    let (cmds, remember) = screen_mode_commands(false, false, true, false, "fullScreen");
+    assert_eq!((cmds, remember), (vec![Fullscreen(true)], false));
+}
+
+#[test]
 fn zoom_presets_and_fit_layers() {
     let (mut app, ctx) = app_with(1);
     menu(&mut app, &ctx, "view.twoHundredPercent", json!({})).unwrap();
@@ -130,6 +158,19 @@ fn arrange_layouts_floating_windows_and_matching() {
 }
 
 #[test]
+fn two_up_and_stacked_cells_keep_their_existing_boundaries() {
+    let rect = egui::Rect::from_min_max(egui::pos2(40.0, 75.0), egui::pos2(940.0, 675.0));
+    let region = |left, top, right, bottom| egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, bottom));
+    assert_eq!(cells("twoUpVertical", rect, 2).unwrap(), vec![region(40.0, 75.0, 490.0, 675.0), region(490.0, 75.0, 940.0, 675.0)]);
+    assert_eq!(cells("twoUpHorizontal", rect, 2).unwrap(), vec![region(40.0, 75.0, 940.0, 375.0), region(40.0, 375.0, 940.0, 675.0)]);
+    assert_eq!(
+        cells("threeUpStacked", rect, 3).unwrap(),
+        vec![region(40.0, 75.0, 490.0, 675.0), region(490.0, 75.0, 940.0, 375.0), region(490.0, 375.0, 940.0, 675.0)]
+    );
+    assert!(cells("twoUpVertical", rect, 1).is_none());
+}
+
+#[test]
 fn window_panels_select_dock_tabs() {
     let (mut app, ctx) = app_with(1);
     menu(&mut app, &ctx, "window.panel.info", json!({})).unwrap();
@@ -188,6 +229,7 @@ fn engine_commands_open_their_dialogs() {
     assert_eq!(app.session.active().unwrap().doc.guides.vertical, vec![0.0, 22.5, 32.5, 55.0]);
     app.run("type.create", json!({"x": 5, "y": 40, "text": "Warp", "size": 20})).unwrap();
     let d = menu(&mut app, &ctx, "type.warpText", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    app.ui.dialog_mut(d).unwrap().fields.insert("style".into(), json!("arc"));
     crate::dialogs::confirm(&mut app, d).unwrap();
     assert!(app.run("type.info", json!({})).unwrap()["warp"]["style"] == "warpArc");
     // Batch needs a recorded action.
@@ -211,6 +253,45 @@ fn apply_image_and_calculations_open_dialogs_without_editing() {
         assert_eq!(fields["__command"], id, "{id} opened the wrong dialog");
         assert_eq!(app.session.active().unwrap().revision, revision, "{id} edited before confirmation");
     }
+}
+
+#[test]
+fn apply_image_dialog_offers_source_layer_scale_and_offset() {
+    let (mut app, ctx) = app_with(0);
+    app.run("file.new", json!({"width": 8, "height": 8})).unwrap();
+    app.run("edit.fill", json!({"color": "#c08040"})).unwrap();
+    app.run("layer.new.layer", json!({"name": "Skin High"})).unwrap();
+    app.run("edit.fill", json!({"color": "#406080"})).unwrap();
+    app.sync_views();
+    let background = app.session.active().unwrap().doc.walk()[0].2.name.clone();
+    let open = |app: &mut PhotocraftApp| menu(app, &ctx, "image.applyImage", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    let d = open(&mut app);
+    let fields = &app.ui.dialog_mut(d).unwrap().fields;
+    assert_eq!(fields["sourceLayer"], "merged");
+    assert_eq!(fields["scale"], 1.0);
+    assert_eq!(fields["offset"], 0);
+    // Merged first, then the layers top to bottom, shown by their own names.
+    assert_eq!(fields["__choices"]["sourceLayer"], json!(["merged", "Skin High", background]));
+    assert_eq!(fields["__labels"]["Skin High"], "Skin High");
+    // The frequency separation recipe: a layer subtracted from itself at Scale 2, Offset 128 is mid grey.
+    for (k, v) in [("sourceLayer", json!("Skin High")), ("blending", json!("subtract")), ("scale", json!(2.0)), ("offset", json!(128))] {
+        app.ui.dialog_mut(d).unwrap().fields.insert(k.into(), v);
+    }
+    crate::dialogs::confirm(&mut app, d).unwrap();
+    let st = app.session.active().unwrap();
+    let p = st.doc.layer(st.active_layer.unwrap()).unwrap().surface().unwrap().pixel(3, 3);
+    assert!(p[..3].iter().all(|v| (v - 128.0 / 255.0).abs() < 0.003), "{p:?}");
+    app.run("edit.undo", json!({})).unwrap();
+    // The chosen layer is the source, not the merged image.
+    let d = open(&mut app);
+    for (k, v) in [("sourceLayer", json!(background)), ("blending", json!("subtract")), ("scale", json!(2.0)), ("offset", json!(128))] {
+        app.ui.dialog_mut(d).unwrap().fields.insert(k.into(), v);
+    }
+    crate::dialogs::confirm(&mut app, d).unwrap();
+    let st = app.session.active().unwrap();
+    let p = st.doc.layer(st.active_layer.unwrap()).unwrap().surface().unwrap().pixel(3, 3);
+    let want = (64.0 - 192.0) / 255.0 / 2.0 + 128.0 / 255.0;
+    assert!((p[0] - want).abs() < 0.003, "{p:?} vs {want}");
 }
 
 #[test]
@@ -276,4 +357,126 @@ fn lookup_export_dialog_uses_the_current_adjustment_selection() {
     let direct = app.run("file.export.colorLookupTables", json!({"size": 3, "scope": "selected"})).unwrap();
     assert_eq!(direct["layerCount"], 1);
     assert!(direct["cube"].as_str().unwrap().contains("LUT_3D_SIZE 3"));
+}
+
+/// Float in Window takes the document and the screen position a dragged-off tab was dropped at
+/// (#3733); bad params are errors, not panics.
+#[test]
+fn float_in_window_takes_a_document_and_position() {
+    let (mut app, ctx) = app_with(3);
+    let r = menu(&mut app, &ctx, "window.arrange.floatInWindow", json!({"document": 1, "position": [1950.0, 40.5]})).unwrap();
+    let w = app.ui.windows.last().unwrap();
+    assert_eq!(r, json!({"window": w.id}));
+    assert_eq!((w.document, w.position), (1, Some([1950.0, 40.5])));
+    assert_eq!(app.session.active_index(), Some(1));
+    menu(&mut app, &ctx, "window.arrange.floatInWindow", json!({})).unwrap();
+    assert_eq!(app.ui.windows.last().map(|w| (w.document, w.position)), Some((1, None)), "defaults: the active document, placed by the OS");
+    for bad in [
+        json!({"document": 3}),
+        json!({"document": -1}),
+        json!({"document": "b"}),
+        json!({"position": [1.0]}),
+        json!({"position": [1.0, "x"]}),
+        json!({"position": [1.0e30, 0.0]}),
+        json!({"position": 5}),
+    ] {
+        assert!(menu(&mut app, &ctx, "window.arrange.floatInWindow", bad.clone()).is_err(), "{bad}");
+    }
+    assert_eq!(app.ui.windows.len(), 2, "rejected params open no window");
+}
+
+#[test]
+fn save_selection_opens_its_dialog_and_saves_on_confirm() {
+    // #3713: Select › Save Selection… asks for the channel, name and operation first.
+    let (mut app, ctx) = app_with(1);
+    app.run("select.all", json!({})).unwrap();
+    let revision = app.session.active().unwrap().revision;
+    let dialog = menu(&mut app, &ctx, "select.saveSelection", json!({})).unwrap()["dialog"].as_u64().expect("Save Selection opens a dialog");
+    assert_eq!(app.session.active().unwrap().revision, revision, "saved before confirmation");
+    assert!(app.session.active().unwrap().doc.channels.is_empty());
+    let fields = &mut app.ui.dialog_mut(dialog).unwrap().fields;
+    assert_eq!(fields["__command"], "select.saveSelection");
+    assert_eq!(fields["channel"], "new");
+    assert_eq!(fields["__choices"]["operation"], json!(["new", "replace", "add", "subtract", "intersect"]));
+    fields.insert("name".into(), json!("Keep"));
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
+    let names: Vec<_> = app.session.active().unwrap().doc.channels.iter().map(|c| c.name.clone()).collect();
+    assert_eq!(names, ["Keep"]);
+    // A second save lists the new channel as a destination.
+    let dialog = menu(&mut app, &ctx, "select.saveSelection", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    assert_eq!(app.ui.dialog_mut(dialog).unwrap().fields["__choices"]["channel"], json!(["new", "Keep"]));
+}
+
+#[test]
+fn load_selection_opens_its_dialog_and_loads_on_confirm() {
+    // #3713: Select › Load Selection… used to fail with "missing `channel`".
+    let (mut app, ctx) = app_with(1);
+    app.run("select.all", json!({})).unwrap();
+    app.run("select.saveSelection", json!({"name": "Keep"})).unwrap();
+    app.run("select.deselect", json!({})).unwrap();
+    let dialog = menu(&mut app, &ctx, "select.loadSelection", json!({})).unwrap()["dialog"].as_u64().expect("Load Selection opens a dialog");
+    assert!(app.session.active().unwrap().doc.selection.is_none(), "loaded before confirmation");
+    let fields = &app.ui.dialog_mut(dialog).unwrap().fields;
+    assert_eq!(fields["__command"], "select.loadSelection");
+    assert_eq!(fields["channel"], "Keep");
+    assert_eq!(fields["invert"], false);
+    assert_eq!(fields["operation"], "new");
+    let channels = fields["__choices"]["channel"].as_array().unwrap();
+    assert!(channels.contains(&json!("Keep")) && channels.contains(&json!("transparency")));
+    // The layer has no mask, so its mask is not offered.
+    assert!(!channels.contains(&json!("mask")), "{channels:?}");
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
+    assert!(app.session.active().unwrap().doc.selection.is_some());
+}
+
+#[test]
+fn load_selection_without_alpha_channels_offers_the_composite() {
+    let (mut app, ctx) = app_with(1);
+    let dialog = menu(&mut app, &ctx, "select.loadSelection", json!({})).unwrap()["dialog"].as_u64().unwrap();
+    assert_eq!(app.ui.dialog_mut(dialog).unwrap().fields["channel"], "RGB");
+    crate::dialogs::confirm(&mut app, dialog).unwrap();
+}
+
+/// One frame of the shortcut handler with a plain Esc press.
+fn press_esc(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    let key = egui::Key::Escape;
+    let input = egui::RawInput {
+        focused: true,
+        events: vec![egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }],
+        ..Default::default()
+    };
+    ctx.run_ui(input, |ui| crate::shortcuts::handle(app, ui.ctx())).textures_delta.clear();
+}
+
+#[test]
+fn esc_leaves_full_screen_modes_unless_something_else_owns_it() {
+    let (mut app, ctx) = app_with(1);
+    // Both full screen modes return to Standard, and the menu check follows (#4116).
+    for mode in ["fullScreen", "fullScreenWithMenuBar"] {
+        menu(&mut app, &ctx, &format!("view.screenMode.{mode}"), json!({})).unwrap();
+        press_esc(&mut app, &ctx);
+        assert_eq!(app.ui.view.screen_mode, "standard", "{mode}");
+        assert_eq!(checked(&app, "view.screenMode.standard"), Some(true));
+    }
+    // In Standard, Esc leaves the mode alone.
+    press_esc(&mut app, &ctx);
+    assert_eq!(app.ui.view.screen_mode, "standard");
+    // An open dialog takes Esc first.
+    menu(&mut app, &ctx, "view.screenMode.fullScreen", json!({})).unwrap();
+    menu(&mut app, &ctx, "image.canvasSize", json!({})).unwrap();
+    assert_eq!(app.ui.dialogs.len(), 1);
+    press_esc(&mut app, &ctx);
+    assert_eq!(app.ui.view.screen_mode, "fullScreen");
+    app.ui.dialogs.clear();
+    // So does Free Transform: Esc cancels it and the mode stays.
+    app.run("select.all", json!({})).unwrap();
+    crate::transform_tool::begin(&mut app, &ctx).unwrap();
+    assert!(app.ui.transform.is_some());
+    press_esc(&mut app, &ctx);
+    assert!(app.ui.transform.is_none());
+    assert_eq!(app.ui.view.screen_mode, "fullScreen");
+    // A selection stays while Esc leaves full screen; the next Esc deselects.
+    press_esc(&mut app, &ctx);
+    assert_eq!(app.ui.view.screen_mode, "standard");
+    assert!(app.session.active().unwrap().doc.selection.is_some());
 }

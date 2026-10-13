@@ -63,14 +63,22 @@ impl Cfa {
     /// Colour at data coordinates.
     #[inline]
     pub fn color(&self, x: usize, y: usize) -> u8 {
-        let cx = (x + self.width - self.origin_x % self.width) % self.width;
-        let cy = (y + self.height - self.origin_y % self.height) % self.height;
-        self.colors.get(cy * self.width + cx).copied().unwrap_or(1)
+        fn relative(v: usize, origin: usize, period: usize) -> Option<usize> {
+            if period == 0 {
+                return None;
+            }
+            let (v, origin) = (v % period, origin % period);
+            Some(if v >= origin { v - origin } else { period - (origin - v) })
+        }
+        let Some((cx, cy)) = relative(x, self.origin_x, self.width).zip(relative(y, self.origin_y, self.height)) else {
+            return 1;
+        };
+        cy.checked_mul(self.width).and_then(|i| i.checked_add(cx)).and_then(|i| self.colors.get(i)).copied().unwrap_or(1)
     }
 
     /// The 2×2 colours seen from data coordinates (`x0`, `y0`), row-major.
     pub fn phase(&self, x0: usize, y0: usize) -> [u8; 4] {
-        [self.color(x0, y0), self.color(x0 + 1, y0), self.color(x0, y0 + 1), self.color(x0 + 1, y0 + 1)]
+        [self.color(x0, y0), self.color(x0.saturating_add(1), y0), self.color(x0, y0.saturating_add(1)), self.color(x0.saturating_add(1), y0.saturating_add(1))]
     }
 
     /// `true` for a Bayer pattern: a 2×2 period holding one red, one blue and two
@@ -79,10 +87,11 @@ impl Cfa {
         if self.width == 0 || self.height == 0 || self.width > 16 || self.height > 16 {
             return false;
         }
-        let p = self.phase(self.origin_x, self.origin_y);
-        let periodic = (0..self.height).all(|y| (0..self.width).all(|x| self.color(self.origin_x + x, self.origin_y + y) == p[(y % 2) * 2 + x % 2]));
-        let greens_on_diagonal =
-            (p[0] == 1 && p[3] == 1 && p[1] != 1 && p[2] != 1 && p[1] + p[2] == 2) || (p[1] == 1 && p[2] == 1 && p[0] != 1 && p[3] != 1 && p[0] + p[3] == 2);
+        let (ox, oy) = (self.origin_x % self.width, self.origin_y % self.height);
+        let p = self.phase(ox, oy);
+        let periodic = (0..self.height).all(|y| (0..self.width).all(|x| self.color(ox + x, oy + y) == p[(y % 2) * 2 + x % 2]));
+        let greens_on_diagonal = (p[0] == 1 && p[3] == 1 && p[1] != 1 && p[2] != 1 && u16::from(p[1]) + u16::from(p[2]) == 2)
+            || (p[1] == 1 && p[2] == 1 && p[0] != 1 && p[3] != 1 && u16::from(p[0]) + u16::from(p[3]) == 2);
         periodic && greens_on_diagonal
     }
 }
@@ -110,7 +119,8 @@ impl BlackLevels {
     pub fn at(&self, ax: usize, ay: usize, s: usize, spp: usize) -> f32 {
         let r = ay % self.rows.max(1);
         let c = ax % self.cols.max(1);
-        let base = self.values.get((r * self.cols.max(1) + c) * spp + s).or_else(|| self.values.first()).copied().unwrap_or(0.0);
+        let index = r.checked_mul(self.cols.max(1)).and_then(|i| i.checked_add(c)).and_then(|i| i.checked_mul(spp)).and_then(|i| i.checked_add(s));
+        let base = index.and_then(|i| self.values.get(i)).or_else(|| self.values.first()).copied().unwrap_or(0.0);
         base + self.delta_h.get(ax).copied().unwrap_or(0.0) + self.delta_v.get(ay).copied().unwrap_or(0.0)
     }
 
@@ -129,7 +139,7 @@ pub struct Sensor {
     /// Data width and height in pixels.
     pub width: usize,
     pub height: usize,
-    /// Samples per pixel: 1 for CFA data, 3 for LinearRaw.
+    /// Samples per pixel: 1 for CFA data, 3 for LinearRaw (1 for monochrome LinearRaw).
     pub samples: usize,
     /// Row-major interleaved samples, `width * height * samples`.
     pub data: Vec<u16>,
@@ -157,7 +167,19 @@ pub struct Sensor {
     /// output]` pairs in linear ProPhoto, applied per channel after the colour conversion and
     /// exposure. Below the first point the curve is a line through 0; empty: no curve.
     pub tone_curve: Vec<[f32; 2]>,
+    /// Camera Raw's adaptive black point, for profiles that copy its default rendering: this
+    /// factor times the 0.1th percentile of the image's linear luminance is subtracted before the
+    /// tone curve (see `tone.rs`). 0: no black point.
+    pub black_point: f32,
     pub warnings: Vec<String>,
+}
+
+impl Sensor {
+    /// `true` for monochrome data (one-sample LinearRaw: monochrome cameras, scanner DNGs), which
+    /// develops to neutral grey with no white balance or colour calibration.
+    pub fn is_monochrome(&self) -> bool {
+        self.samples == 1 && self.cfa.is_none()
+    }
 }
 
 /// Raw samples read from one IFD.
@@ -212,8 +234,7 @@ pub(crate) fn read_plane(t: &Tiff, ifd: &Ifd, limits: &Limits, layout: JpegLayou
         return Err(RawError::unsupported("planar raw data"));
     }
     match compression {
-        1 | 7 | 8 | JPEG_XL => {}
-        34892 => return Err(RawError::unsupported("lossy-compressed DNG")),
+        1 | 7 | 8 | 34892 | JPEG_XL => {}
         34713 => return Err(RawError::unsupported("Nikon compressed NEF")),
         32767 => return Err(RawError::unsupported("Sony compressed ARW")),
         65535 => return Err(RawError::unsupported("Pentax compressed PEF")),
@@ -226,6 +247,11 @@ pub(crate) fn read_plane(t: &Tiff, ifd: &Ifd, limits: &Limits, layout: JpegLayou
         let s = &segments[i];
         let rows = s.h.min(height - s.y);
         let src = t.bytes(s.offset, s.len).ok_or_else(|| RawError::malformed("raw data lies outside the file"))?;
+        // Every branch below sizes at least one buffer from the segment's own geometry, which
+        // the file declares independently of the image: a tile can be far larger than the image
+        // it belongs to, so the image check above does not bound those buffers. Charge the
+        // segment itself before decoding it (#2925).
+        limits.check(s.w as u64, s.h as u64, samples as u64 * 2)?;
         match compression {
             1 => unpack(src, s.w, rows, samples, bits, le),
             8 => {
@@ -255,10 +281,41 @@ pub(crate) fn read_plane(t: &Tiff, ifd: &Ifd, limits: &Limits, layout: JpegLayou
                 v.resize(s.w * s.h * samples, 0);
                 Ok(v)
             }
+            34892 => {
+                // Adobe DNG compression 34892: baseline JPEG tiles (lossy, 8-bit). The tile is
+                // a complete JPEG stream: a CFA part decodes to gray samples, a 3-sample
+                // LinearRaw part holds YCbCr, which zune-jpeg converts to RGB. The header is
+                // decoded and size-checked before any pixel allocation, so a hostile tile
+                // cannot size the decoder's buffers (up to 16384x16384) with a fake SOF.
+                let out = match samples {
+                    1 => zune_core::colorspace::ColorSpace::Luma,
+                    3 => zune_core::colorspace::ColorSpace::RGB,
+                    n => return Err(RawError::unsupported(format!("lossy DNG with {n} samples per pixel (1 or 3 are supported)"))),
+                };
+                let options = zune_core::options::DecoderOptions::default().jpeg_set_out_colorspace(out);
+                let mut dec = zune_jpeg::JpegDecoder::new_with_options(zune_core::bytestream::ZCursor::new(src), options);
+                dec.decode_headers().map_err(|e| RawError::malformed(format!("lossy JPEG tile header: {e:?}")))?;
+                let f = dec.info().ok_or_else(|| RawError::malformed("lossy JPEG tile has no header"))?;
+                if (f.width as usize, f.height as usize) != (s.w, rows) {
+                    return Err(RawError::malformed(format!("lossy JPEG tile is {}x{}, expected {}x{}", f.width, f.height, s.w, rows)));
+                }
+                let decoded = dec.decode().map_err(|e| RawError::malformed(format!("lossy JPEG tile: {e:?}")))?;
+                let need = s.w * rows * samples;
+                if decoded.len() != need {
+                    return Err(RawError::malformed(format!("lossy JPEG tile holds {} samples, expected {need}", decoded.len())));
+                }
+                // The 8-bit samples widen to the document's 16-bit range (0xFF -> 0xFFFF).
+                Ok(decoded.into_iter().map(|b| u16::from(b) * 257).collect())
+            }
+            // Compression 7 (lossless JPEG): the frame the entropy stream declares is capped
+            // by the budget, not only by the segment, and the `Quads` scatter buffer below
+            // comes out of the same budget. `max_alloc` counts bytes, a sample is two.
             _ => {
                 let need = s.w * rows * samples;
-                let max = s.w.saturating_mul(s.h).saturating_mul(samples).saturating_mul(4);
-                let (f, v) = ljpeg::decode(src, max)?;
+                let scatter = if layout == JpegLayout::Quads && samples == 1 { s.w.saturating_mul(s.h).saturating_mul(2) as u64 } else { 0 };
+                let budget = usize::try_from(limits.max_alloc.saturating_sub(scatter) / 2).unwrap_or(usize::MAX);
+                let geom = s.w.saturating_mul(s.h).saturating_mul(samples).saturating_mul(4);
+                let (f, v) = ljpeg::decode(src, geom.min(budget))?;
                 if v.len() < need {
                     return Err(RawError::malformed("lossless JPEG tile is smaller than its tile"));
                 }

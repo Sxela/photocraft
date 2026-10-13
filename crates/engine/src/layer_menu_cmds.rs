@@ -127,13 +127,33 @@ fn edit_rgba(s: &mut Session, label: &str, grow: i32, f: impl FnOnce(&mut Vec<[f
 fn apply_mask(s: &mut Session, p: &Value) -> Result<Value> {
     let id = layer_param(s, p)?;
     s.edit("Apply Layer Mask", |doc, _| {
+        // Applying a feathered mask must bake the same softened coverage the compositor
+        // displays. LayerMask::values_into accounts for density but not feather (#3044).
+        let feathered = {
+            let layer = doc.layer(id).ok_or(EngineError::NoLayer(id))?;
+            if layer.mask.as_ref().is_some_and(|m| m.enabled && photocraft_compose::masks::feather_sigma(m.feather) > 0.0) {
+                // Do not bake an independent vector mask that remains attached after Apply.
+                let mut mask_only = layer.clone();
+                mask_only.vector_mask = None;
+                // Cover off-canvas pixels too: outside its area the combined mask is only the
+                // mask's default value, which would hide moved-off content (#3043).
+                let area = layer.surface().map_or(doc.bounds(), |surf| doc.bounds().union(&surf.content_bounds()));
+                photocraft_compose::masks::combined_mask(&mask_only, area)
+            } else {
+                None
+            }
+        };
         let mask = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?.mask.take().ok_or_else(|| other("the layer has no layer mask"))?;
         let surf = crate::commands::paint_surface(doc, id, &Value::Null)?;
         let r = surf.content_bounds();
         if !r.is_empty() {
             let mut px = read_rgba(surf, r);
             let mut m = Vec::new();
-            mask.values_into(r, &mut m);
+            if let Some(ref softened) = feathered {
+                softened.read_region_into(r, &mut m);
+            } else {
+                mask.values_into(r, &mut m);
+            }
             for (q, k) in px.iter_mut().zip(&m) {
                 q[3] *= k;
             }
@@ -148,9 +168,10 @@ fn apply_mask(s: &mut Session, p: &Value) -> Result<Value> {
 fn mask_from_transparency(s: &mut Session, p: &Value) -> Result<Value> {
     let id = layer_param(s, p)?;
     s.edit("From Transparency", |doc, _| {
-        let bounds = doc.bounds();
         let surf = crate::commands::paint_surface(doc, id, &Value::Null)?;
-        let r = surf.content_bounds().intersect(&bounds);
+        // Masks are attached to layer coordinates, including pixels temporarily off-canvas.
+        // Clipping to document bounds loses their alpha permanently when moved back (#3043).
+        let r = surf.content_bounds();
         let mut mask = LayerMask::hide_all();
         if !r.is_empty() {
             let mut px = read_rgba(surf, r);
@@ -591,8 +612,14 @@ fn blend_range(v: &Value) -> Option<BlendRange> {
 
 fn global_light(s: &mut Session, p: &Value) -> Result<Value> {
     let cur = s.active().ok_or(EngineError::NoDocument)?.doc.global_light;
-    let angle = num(p, "angle", cur.angle);
-    let altitude = num(p, "altitude", cur.altitude).clamp(0.0, 90.0);
+    // Read as f64 and reject what f32 can't hold: 1e39 would become inf, and rem_euclid NaN.
+    let f32_param = |key: &str, default: f32| match p.get(key).and_then(Value::as_f64) {
+        None => Ok(default),
+        Some(v) if v.is_finite() && v.abs() <= f64::from(f32::MAX) => Ok(v as f32),
+        Some(_) => Err(bad("layer.layerStyle.globalLight", format!("{key} must be a finite number"))),
+    };
+    let angle = f32_param("angle", cur.angle)?;
+    let altitude = f32_param("altitude", cur.altitude)?.clamp(0.0, 90.0);
     let angle = (angle + 180.0).rem_euclid(360.0) - 180.0;
     s.edit("Global Light", |doc, _| {
         doc.global_light.angle = angle;

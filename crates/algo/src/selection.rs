@@ -3,12 +3,14 @@
 //! modify (expand, contract, border, smooth, feather), anti-aliased lasso,
 //! and combining with an existing selection.
 
+use std::sync::Arc;
+
 use photocraft_color::PixelFormat;
 use photocraft_geom::{Rect, TILE_SIZE, TileCoord};
 use photocraft_raster::Surface;
 use serde::{Deserialize, Serialize};
 
-use crate::photo_util::par_rows;
+use crate::photo_util::{par_map, par_rows};
 
 /// How a new selection combines with the current one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -79,49 +81,57 @@ fn coverage8(v: f32) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8
 }
 
-/// Builds a GRAY8 selection surface from 8-bit coverage over `area`, allocating only the tiles
-/// that hold something (as [`Surface::prune`] would leave them).
-fn surface_from_coverage8(bytes: &[u8], area: Rect) -> Surface {
+/// Builds a GRAY8 selection surface over `area` (masks row-major over it) whose coverage at
+/// each sample is `f(prev, new)`, `prev` reading 0 without a `prev` mask and missing samples
+/// reading 0. Tiles are filled in parallel straight from the masks, a row at a time (no
+/// full-canvas byte buffer); only the tiles that hold something are kept (as [`Surface::prune`]
+/// would leave them), and fully selected tiles share one tile (copy-on-write), so the inside of a
+/// large selection costs no memory per tile (#211).
+fn surface_from_masks(area: Rect, new: &[f32], prev: Option<&[f32]>, f: impl Fn(f32, f32) -> f32 + Sync + Send) -> Surface {
     let mut s = Surface::new(PixelFormat::GRAY8);
+    if area.is_empty() {
+        return s;
+    }
     let w = area.width() as usize;
     let ts = TILE_SIZE as usize;
-    for tc in area.tiles() {
-        let tr = tc.rect().intersect(&area);
-        let (lx, span) = ((tr.x0 - area.x0) as usize, tr.width() as usize);
-        let row = |y: i32| bytes.get((y - area.y0) as usize * w + lx..(y - area.y0) as usize * w + lx + span);
-        if !(tr.y0..tr.y1).any(|y| row(y).is_some_and(|r| r.iter().any(|b| *b != 0))) {
-            continue;
-        }
-        let data = s.tile_mut(tc).bytes_mut();
-        for y in tr.y0..tr.y1 {
-            let o = (y - tc.ty * TILE_SIZE) as usize * ts + (tr.x0 - tc.tx * TILE_SIZE) as usize;
-            if let (Some(src), Some(dst)) = (row(y), data.get_mut(o..o + span)) {
-                dst.copy_from_slice(src);
+    let full = s.solid_tile(&[1.0]);
+    let row = |i0: usize, dst: &mut [u8]| {
+        let n = dst.len();
+        match (new.get(i0..i0 + n), prev.map(|p| p.get(i0..i0 + n))) {
+            (Some(sn), None) => dst.iter_mut().zip(sn).for_each(|(d, v)| *d = coverage8(f(0.0, *v))),
+            (Some(sn), Some(Some(sp))) => dst.iter_mut().zip(sn.iter().zip(sp)).for_each(|(d, (v, p))| *d = coverage8(f(*p, *v))),
+            _ => {
+                let at = |m: &[f32], i: usize| m.get(i).copied().unwrap_or(0.0);
+                for (i, d) in (i0..).zip(dst.iter_mut()) {
+                    *d = coverage8(f(prev.map_or(0.0, |p| at(p, i)), at(new, i)));
+                }
             }
         }
-    }
+    };
+    // Every tile starts as one shared blank tile; `Arc::make_mut` gives each task its own copy.
+    let blanks = s.take_tiles(area);
+    let built = par_map(blanks.len(), |k| {
+        let (tc, blank) = blanks.get(k)?;
+        let tr = tc.rect().intersect(&area);
+        let (lx, span) = ((tr.x0 - area.x0) as usize, tr.width() as usize);
+        let mut tile = Arc::clone(blank);
+        let data = Arc::make_mut(&mut tile).bytes_mut();
+        let (mut lo, mut hi) = (if tr == tc.rect() { u8::MAX } else { 0 }, 0u8);
+        for y in tr.y0..tr.y1 {
+            let o = (y - tc.ty * TILE_SIZE) as usize * ts + (tr.x0 - tc.tx * TILE_SIZE) as usize;
+            let Some(dst) = data.get_mut(o..o + span) else { continue };
+            row((y - area.y0) as usize * w + lx, dst);
+            (lo, hi) = dst.iter().fold((lo, hi), |(lo, hi), b| (lo.min(*b), hi.max(*b)));
+        }
+        (hi > 0).then(|| (*tc, if lo == u8::MAX { Arc::clone(&full) } else { tile }))
+    });
+    s.put_tiles(built.into_iter().flatten());
     s
 }
 
-/// 8-bit coverage of `m` (missing samples are 0), computed in parallel.
-fn to_coverage8(m: &[f32], area: Rect, f: impl Fn(usize, f32) -> f32 + Sync + Send) -> Vec<u8> {
-    let w = area.width() as usize;
-    let mut bytes = vec![0u8; w * area.height() as usize];
-    par_rows(&mut bytes, w, 1, |y, row| {
-        for (x, b) in row.iter_mut().enumerate() {
-            let i = y * w + x;
-            *b = coverage8(f(i, m.get(i).copied().unwrap_or(0.0)));
-        }
-    });
-    bytes
-}
-
-/// Builds a GRAY8 selection surface from a mask over `area`.
+/// Builds a GRAY8 selection surface from a mask over `area` (missing samples are 0).
 pub fn mask_to_surface(m: &[f32], area: Rect) -> Surface {
-    if area.is_empty() {
-        return Surface::new(PixelFormat::GRAY8);
-    }
-    surface_from_coverage8(&to_coverage8(m, area, |_, v| v), area)
+    surface_from_masks(area, m, None, |_, v| v)
 }
 
 /// Combines `new` with `old` by `mode`. Returns `None` when nothing is selected.
@@ -132,22 +142,18 @@ pub fn combine(old: Option<&Surface>, new: &[f32], area: Rect, mode: SelectionMo
     // Quantize to the 8-bit grid selections are stored on, so combining a mask with itself is
     // exact. Below half an 8-bit step is nothing.
     let q = |v: f32| f32::from(coverage8(v)) / 255.0;
-    let bytes = match mode {
-        SelectionMode::Replace => to_coverage8(new, area, |_, v| v),
+    let s = match mode {
+        SelectionMode::Replace => surface_from_masks(area, new, None, |_, v| v),
         _ => {
             let prev = mask_from_surface(old, area);
-            let at = |i: usize| prev.get(i).copied().unwrap_or(0.0);
             match mode {
-                SelectionMode::Add => to_coverage8(new, area, |i, v| at(i).max(q(v))),
-                SelectionMode::Subtract => to_coverage8(new, area, |i, v| (at(i) - q(v)).max(0.0)),
-                _ => to_coverage8(new, area, |i, v| at(i).min(q(v))),
+                SelectionMode::Add => surface_from_masks(area, new, Some(&prev), |p, v| p.max(q(v))),
+                SelectionMode::Subtract => surface_from_masks(area, new, Some(&prev), |p, v| (p - q(v)).max(0.0)),
+                _ => surface_from_masks(area, new, Some(&prev), |p, v| p.min(q(v))),
             }
         }
     };
-    if bytes.iter().all(|b| *b == 0) {
-        return None;
-    }
-    Some(surface_from_coverage8(&bytes, area))
+    (s.tile_count() > 0).then_some(s)
 }
 
 fn close(a: [f32; 4], b: [f32; 4], tol: f32) -> bool {
@@ -160,7 +166,8 @@ fn close(a: [f32; 4], b: [f32; 4], tol: f32) -> bool {
 /// around the seed. `px` covers `area`.
 pub fn magic_wand(px: &[[f32; 4]], area: Rect, seed: (i32, i32), tolerance: f32, contiguous: bool, anti_alias: bool) -> Vec<f32> {
     let (w, h) = (area.width() as usize, area.height() as usize);
-    let mut m = vec![0.0f32; w * h];
+    let Some(n) = w.checked_mul(h).filter(|&n| n <= px.len()) else { return Vec::new() };
+    let mut m = vec![0.0f32; n];
     if !area.contains(seed.0, seed.1) {
         return m;
     }
@@ -239,7 +246,9 @@ impl Region {
         if !self.bbox.contains(x, y) {
             return 0.0;
         }
-        self.mask[(y - self.bbox.y0) as usize * self.bbox.width() as usize + (x - self.bbox.x0) as usize] as f32 / 255.0
+        let row = (y.abs_diff(self.bbox.y0) as usize).checked_mul(self.bbox.width() as usize);
+        let value = row.and_then(|i| i.checked_add(x.abs_diff(self.bbox.x0) as usize)).and_then(|i| self.mask.get(i)).copied().unwrap_or(0);
+        f32::from(value) / 255.0
     }
 }
 
@@ -251,6 +260,9 @@ pub fn wand_region(img: &[[u8; 4]], area: Rect, seed: (i32, i32), tolerance: f32
         return None;
     }
     let (w, h) = (area.width() as usize, area.height() as usize);
+    if w.checked_mul(h).is_none_or(|n| n > img.len()) {
+        return None;
+    }
     let target = img[(seed.1 - area.y0) as usize * w + (seed.0 - area.x0) as usize];
     let tol = (tolerance + 1e-3).floor().max(0.0) as i32;
     // Copying a selection can leave RGB under zero alpha. Those invisible colours must not
@@ -710,8 +722,10 @@ pub fn tone_range(px: &[[f32; 4]], lo: f32, hi: f32, falloff: f32) -> Vec<f32> {
 }
 
 mod distance;
+mod marquee;
 
 pub use distance::edt;
+pub use marquee::{combine_surfaces, ellipse_surface};
 
 /// Grows the selection by `r` pixels.
 pub fn expand(m: &[f32], w: usize, h: usize, r: f32) -> Vec<f32> {
@@ -728,11 +742,20 @@ pub fn contract(m: &[f32], w: usize, h: usize, r: f32) -> Vec<f32> {
     expand(&inv, w, h, r).into_iter().map(|v| 1.0 - v).collect()
 }
 
-/// A band of width `r` straddling the selection edge.
+/// Select › Modify › Border: a soft band `2r` wide centred on the selection edge, as in
+/// Photoshop. A pixel `D` away (centre to centre) from the nearest pixel on the other side of the
+/// edge is selected `1 − (D − 1) / r`: fully at the edge, fading to nothing `r` pixels out on
+/// either side (measured on Photoshop 27.11, Border 4: 63, 127, 191, 255 | 255, 191, 127, 63
+/// across a straight edge, the same along the inside of a corner). It used to be a hard band
+/// `r` wide.
 pub fn border(m: &[f32], w: usize, h: usize, r: f32) -> Vec<f32> {
-    let outer = expand(m, w, h, r / 2.0);
-    let inner = contract(m, w, h, r / 2.0);
-    outer.iter().zip(inner).map(|(o, i)| (o - i).max(0.0)).collect()
+    let inside: Vec<bool> = m.iter().map(|v| *v >= 0.5).collect();
+    let outside: Vec<bool> = inside.iter().map(|v| !v).collect();
+    let (to_inside, to_outside) = (edt(&inside, w, h), edt(&outside, w, h));
+    if r <= 0.0 || to_inside.len() != m.len() || to_outside.len() != m.len() {
+        return vec![0.0; m.len()];
+    }
+    inside.iter().zip(to_inside.iter().zip(&to_outside)).map(|(&sel, (&di, &dout))| (1.0 - ((if sel { dout } else { di }) - 1.0) / r).clamp(0.0, 1.0)).collect()
 }
 
 /// Smooth: removes specks and rounds corners (box average of radius `round(r)`, edges
@@ -741,7 +764,7 @@ pub fn smooth(m: &[f32], w: usize, h: usize, r: f32) -> Vec<f32> {
     crate::selection_blur::smooth(m, w, h, r)
 }
 
-/// Feather: Gaussian blur of the mask with sigma = radius / 2 (kernel truncated at 3σ, zero
+/// Feather: Gaussian blur of the mask with sigma = radius, as in Photoshop (kernel truncated at 3σ, zero
 /// beyond the canvas). Parallel, confined to the selection's bounds, and independent of the
 /// radius (#211).
 pub fn feather(m: &[f32], w: usize, h: usize, radius: f32) -> Vec<f32> {
@@ -749,47 +772,84 @@ pub fn feather(m: &[f32], w: usize, h: usize, radius: f32) -> Vec<f32> {
 }
 
 /// Anti-aliased polygon (even-odd) coverage over `area`: exact horizontal
-/// coverage, 4 sub-rows per pixel row (or 1 when not anti-aliased).
+/// coverage, 4 sub-rows per pixel row (or 1 when not anti-aliased). Bands of
+/// rows are filled in parallel, and each sub-row tests only the edges that
+/// cross it (an active edge list over the edges sorted by their top).
 pub fn polygon(points: &[(f32, f32)], area: Rect, anti_alias: bool) -> Vec<f32> {
     let (w, h) = (area.width() as usize, area.height() as usize);
     let mut m = vec![0.0f32; w * h];
-    if points.len() < 3 {
+    if points.len() < 3 || w == 0 {
         return m;
     }
     let sub = if anti_alias { 4 } else { 1 };
-    let mut xs: Vec<f32> = Vec::new();
-    for py in 0..h {
-        for s in 0..sub {
-            let y = area.y0 as f32 + py as f32 + (s as f32 + 0.5) / sub as f32;
-            xs.clear();
-            for i in 0..points.len() {
-                let (a, b) = (points[i], points[(i + 1) % points.len()]);
-                if (a.1 <= y && b.1 > y) || (b.1 <= y && a.1 > y) {
-                    xs.push(a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0));
-                }
+    let sample_y = |py: usize, s: usize| area.y0 as f32 + py as f32 + (s as f32 + 0.5) / sub as f32;
+    // A sub-row at y crosses the edge a→b iff top <= y < bottom; horizontal and NaN edges
+    // never cross one.
+    struct Edge {
+        top: f32,
+        bottom: f32,
+        a: (f32, f32),
+        b: (f32, f32),
+    }
+    let mut edges: Vec<Edge> = points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .filter_map(|(&a, &b)| {
+            if a.1 < b.1 {
+                Some(Edge { top: a.1, bottom: b.1, a, b })
+            } else if b.1 < a.1 {
+                Some(Edge { top: b.1, bottom: a.1, a, b })
+            } else {
+                None
             }
-            xs.sort_by(|a, b| a.total_cmp(b));
-            for span in xs.as_chunks::<2>().0 {
-                let (x0, x1) = ((span[0] - area.x0 as f32).max(0.0), (span[1] - area.x0 as f32).min(w as f32));
-                if x1 <= x0 {
+        })
+        .collect();
+    edges.sort_by(|p, q| p.top.total_cmp(&q.top));
+    const BAND: usize = 64;
+    par_rows(&mut m, w, BAND, |bi, rows| {
+        let py0 = bi * BAND;
+        let (first, last) = (sample_y(py0, 0), sample_y(py0 + rows.len() / w - 1, sub - 1));
+        let reach = edges.partition_point(|e| e.top <= last);
+        let band_edges = edges.get(..reach).unwrap_or_default();
+        let mut pending = band_edges.iter().filter(|e| e.bottom > first).peekable();
+        let mut active: Vec<&Edge> = Vec::new();
+        let mut xs: Vec<f32> = Vec::new();
+        for (r, row) in rows.chunks_exact_mut(w).enumerate() {
+            for s in 0..sub {
+                // Sub-row ys never decrease, so an edge whose bottom is passed stays out.
+                let y = sample_y(py0 + r, s);
+                while let Some(e) = pending.next_if(|e| e.top <= y) {
+                    active.push(e);
+                }
+                active.retain(|e| e.bottom > y);
+                if active.is_empty() {
                     continue;
                 }
-                let (c0, c1) = (x0.floor() as usize, (x1.ceil() as usize).min(w));
-                for cx in c0..c1 {
-                    let cov = if anti_alias {
-                        ((cx + 1) as f32).min(x1) - (cx as f32).max(x0)
-                    } else {
-                        let c = cx as f32 + 0.5;
-                        if c >= x0 && c < x1 { 1.0 } else { 0.0 }
-                    };
-                    m[py * w + cx] += cov.max(0.0) / sub as f32;
+                xs.clear();
+                xs.extend(active.iter().map(|&&Edge { a, b, .. }| a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0)));
+                xs.sort_by(|a, b| a.total_cmp(b));
+                for span in xs.as_chunks::<2>().0 {
+                    let (x0, x1) = ((span[0] - area.x0 as f32).max(0.0), (span[1] - area.x0 as f32).min(w as f32));
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    let (c0, c1) = (x0.floor() as usize, (x1.ceil() as usize).min(w));
+                    for (cx, v) in row.iter_mut().enumerate().take(c1).skip(c0) {
+                        let cov = if anti_alias {
+                            ((cx + 1) as f32).min(x1) - (cx as f32).max(x0)
+                        } else {
+                            let c = cx as f32 + 0.5;
+                            if c >= x0 && c < x1 { 1.0 } else { 0.0 }
+                        };
+                        *v += cov.max(0.0) / sub as f32;
+                    }
                 }
             }
         }
-    }
-    for v in &mut m {
-        *v = v.min(1.0);
-    }
+        for v in rows {
+            *v = v.min(1.0);
+        }
+    });
     m
 }
 
@@ -1098,6 +1158,22 @@ mod tests {
         assert!(b[10 * 20 + 5] > 0.5 && b[10 * 20 + 4] > 0.5);
     }
 
+    /// Photoshop 27.11, measured: a 32×32 rectangle at (16,16) in 64×64, Select › Modify ›
+    /// Border 4 px, filled white. Row y = 32 for x = 8..=24, and the diagonal (16,16)..(24,24).
+    #[test]
+    fn border_matches_photoshop() {
+        let (w, h) = (64, 64);
+        let m: Vec<f32> = (0..w * h).map(|i| if (16..48).contains(&(i % w)) && (16..48).contains(&(i / w)) { 1.0 } else { 0.0 }).collect();
+        let b = border(&m, w, h, 4.0);
+        let v = |x: usize, y: usize| (b[y * w + x] * 255.0).round() as i32;
+        let row: Vec<i32> = (8..=24).map(|x| v(x, 32)).collect();
+        let diag: Vec<i32> = (16..=24).map(|d| v(d, d)).collect();
+        let near = |got: &[i32], want: &[i32]| got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1);
+        let want_row = [0, 0, 0, 0, 63, 127, 191, 255, 255, 191, 127, 63, 0, 0, 0, 0, 0];
+        assert!(near(&row, &want_row), "{row:?}");
+        assert!(near(&diag, &[255, 191, 127, 63, 0, 0, 0, 0, 0]), "{diag:?}");
+    }
+
     #[test]
     fn smooth_removes_specks_and_feather_softens() {
         let mut m = square(20, 20);
@@ -1105,7 +1181,8 @@ mod tests {
         let s = smooth(&m, 20, 20, 1.0);
         assert_eq!(s[2 * 20 + 2], 0.0);
         assert_eq!(s[10 * 20 + 10], 1.0);
-        let f = feather(&square(20, 20), 20, 20, 4.0);
+        // Radius 2 (σ 2) keeps the blur inside the 20×20 canvas, so no coverage is lost.
+        let f = feather(&square(20, 20), 20, 20, 2.0);
         let edge = f[10 * 20 + 5];
         assert!(edge > 0.3 && edge < 0.8, "{edge}");
         let sum: f32 = f.iter().sum();
@@ -1125,6 +1202,107 @@ mod tests {
         let hard = polygon(&[(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)], a, false);
         assert!(hard.iter().all(|v| *v == 0.0 || *v == 1.0));
         assert!(polygon(&[(0.0, 0.0), (1.0, 1.0)], a, true).iter().all(|v| *v == 0.0));
+    }
+
+    /// The previous polygon fill (every edge tested on every sub-row), kept as the oracle.
+    fn old_polygon(points: &[(f32, f32)], area: Rect, anti_alias: bool) -> Vec<f32> {
+        let (w, h) = (area.width() as usize, area.height() as usize);
+        let mut m = vec![0.0f32; w * h];
+        if points.len() < 3 {
+            return m;
+        }
+        let sub = if anti_alias { 4 } else { 1 };
+        let mut xs: Vec<f32> = Vec::new();
+        for py in 0..h {
+            for s in 0..sub {
+                let y = area.y0 as f32 + py as f32 + (s as f32 + 0.5) / sub as f32;
+                xs.clear();
+                for i in 0..points.len() {
+                    let (a, b) = (points[i], points[(i + 1) % points.len()]);
+                    if (a.1 <= y && b.1 > y) || (b.1 <= y && a.1 > y) {
+                        xs.push(a.0 + (y - a.1) / (b.1 - a.1) * (b.0 - a.0));
+                    }
+                }
+                xs.sort_by(|a, b| a.total_cmp(b));
+                for span in xs.as_chunks::<2>().0 {
+                    let (x0, x1) = ((span[0] - area.x0 as f32).max(0.0), (span[1] - area.x0 as f32).min(w as f32));
+                    if x1 <= x0 {
+                        continue;
+                    }
+                    let (c0, c1) = (x0.floor() as usize, (x1.ceil() as usize).min(w));
+                    for cx in c0..c1 {
+                        let cov = if anti_alias {
+                            ((cx + 1) as f32).min(x1) - (cx as f32).max(x0)
+                        } else {
+                            let c = cx as f32 + 0.5;
+                            if c >= x0 && c < x1 { 1.0 } else { 0.0 }
+                        };
+                        m[py * w + cx] += cov.max(0.0) / sub as f32;
+                    }
+                }
+            }
+        }
+        for v in &mut m {
+            *v = v.min(1.0);
+        }
+        m
+    }
+
+    #[test]
+    fn polygon_matches_the_every_edge_fill_bit_for_bit() {
+        let mut seed = 0x2545_f491_u32;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as f32 / u32::MAX as f32
+        };
+        // Taller than one 64-row band, offset, and a 1-pixel-wide area.
+        let areas = [Rect::new(0, 0, 90, 150), Rect::new(-13, 7, 60, 211), Rect::new(5, -40, 6, 30)];
+        let mut cases: Vec<Vec<(f32, f32)>> = vec![
+            // Self-intersecting star, horizontal edges, repeated points, collinear runs.
+            (0..11)
+                .map(|i| {
+                    let t = i as f32 * 4.0 * std::f32::consts::PI / 11.0;
+                    (40.0 + 35.0 * t.cos(), 80.0 + 70.0 * t.sin())
+                })
+                .collect(),
+            vec![(10.0, 10.0), (50.0, 10.0), (50.0, 10.0), (50.0, 60.0), (30.0, 60.0), (30.0, 30.0), (10.0, 30.0)],
+            vec![(0.0, 0.0), (20.0, 0.0), (40.0, 0.0), (40.0, 0.0), (0.0, 0.0)],
+            // Vertices on the sub-row centres and the pixel edges.
+            vec![(3.125, 2.375), (70.5, 2.375), (70.875, 140.625), (3.0, 140.0), (35.0, 64.0), (35.0, 64.125)],
+            // Entirely outside, and straddling every side.
+            vec![(-500.0, -500.0), (-400.0, -500.0), (-450.0, -300.0)],
+            vec![(-80.0, -60.0), (300.0, 20.0), (60.0, 400.0)],
+            // Non-finite coordinates and a negative zero.
+            vec![(10.0, 10.0), (f32::NAN, 40.0), (60.0, 70.0), (20.0, f32::INFINITY), (-0.0, -0.0), (0.0, 0.0)],
+        ];
+        for n in [3, 7, 40, 400] {
+            for spread in [1.0, 2.0] {
+                cases.push((0..n).map(|_| (rnd() * 100.0 * spread - 50.0 * (spread - 1.0), rnd() * 220.0 * spread - 60.0 * spread)).collect());
+                // Lasso-like: a random walk snapped to quarter pixels.
+                let (mut x, mut y) = (45.0f32, 75.0f32);
+                cases.push(
+                    (0..n)
+                        .map(|_| {
+                            x = ((x + (rnd() - 0.5) * 12.0 * spread) * 4.0).round() / 4.0;
+                            y = ((y + (rnd() - 0.5) * 12.0 * spread) * 4.0).round() / 4.0;
+                            (x, y)
+                        })
+                        .collect(),
+                );
+            }
+        }
+        for pts in &cases {
+            for &area in &areas {
+                for aa in [true, false] {
+                    let (new, old) = (polygon(pts, area, aa), old_polygon(pts, area, aa));
+                    assert_eq!(new.len(), old.len());
+                    let diff = new.iter().zip(&old).position(|(a, b)| a.to_bits() != b.to_bits());
+                    assert!(diff.is_none(), "{pts:?} {area:?} aa={aa}: first difference at {diff:?}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -1176,7 +1354,10 @@ mod tests {
         let mut rng = crate::photo_util::Rng(7);
         let mut u = move || (rng.next() >> 11) as f32 / (1u64 << 53) as f32;
         // Off-grid areas spanning several tiles, including negative origins.
-        for area in [Rect::new(0, 0, 300, 20), Rect::new(-37, 250, 530, 263), Rect::new(255, -3, 258, 600), Rect::new(5, 5, 6, 6)] {
+        // The last one holds whole tiles, which fully selected masks fill (shared tiles).
+        for area in
+            [Rect::new(0, 0, 300, 20), Rect::new(-37, 250, 530, 263), Rect::new(255, -3, 258, 600), Rect::new(5, 5, 6, 6), Rect::new(-37, -300, 530, 263)]
+        {
             let n = area.width() as usize * area.height() as usize;
             let old_m: Vec<f32> = (0..n).map(|i| if i % 97 < 40 { u() } else { 0.0 }).collect();
             let old = old_mask_to_surface(&old_m, area);
@@ -1185,7 +1366,7 @@ mod tests {
             let mut slow_read = Vec::new();
             old.read_region_into(area, &mut slow_read);
             assert_eq!(mask_from_surface(Some(&old), area), slow_read);
-            for kind in 0..3 {
+            for kind in 0..4 {
                 let new: Vec<f32> = (0..n)
                     .map(|i| match kind {
                         0 => u() * 1.2 - 0.1,
@@ -1196,7 +1377,8 @@ mod tests {
                                 0.0
                             }
                         }
-                        _ => 0.001,
+                        2 => 0.001,
+                        _ => f32::from(u8::from(i >= 1000)),
                     })
                     .collect();
                 for mode in [SelectionMode::Replace, SelectionMode::Add, SelectionMode::Subtract, SelectionMode::Intersect] {
@@ -1222,6 +1404,37 @@ mod tests {
                 [v, v / 2, 255 - v, if x % 11 == 0 { 128 } else { 255 }]
             })
             .collect()
+    }
+
+    #[test]
+    fn magic_wand_rejects_incomplete_and_overflowing_pixel_inputs() {
+        let area = Rect::new(0, 0, 4, 4);
+        let short = vec![[255u8, 0, 0, 255]; 4];
+        let floats: Vec<[f32; 4]> = short.iter().map(|p| p.map(|v| f32::from(v) / 255.0)).collect();
+        assert_eq!(magic_wand(&floats, area, (1, 1), 0.0, true, false), Vec::<f32>::new());
+        assert_eq!(wand_region(&short, area, (1, 1), 0.0, true, false), None);
+
+        let huge = Rect::new(i32::MIN, i32::MIN, i32::MAX, i32::MAX);
+        assert!(magic_wand(&floats, huge, (0, 0), 0.0, false, false).is_empty());
+        assert_eq!(wand_region(&short, huge, (0, 0), 0.0, false, false), None);
+
+        let valid = Rect::new(0, 0, 2, 2);
+        assert_eq!(magic_wand(&floats, valid, (0, 0), 0.0, false, false), vec![1.0; 4]);
+        assert!(wand_region(&short, valid, (0, 0), 0.0, false, false).is_some());
+    }
+
+    #[test]
+    fn region_coverage_outside_a_short_mask_is_zero() {
+        let region = Region { bbox: Rect::new(-2, -3, 1, -1), mask: vec![255, 128] };
+        assert_eq!(region.at(-2, -3), 1.0);
+        assert!((region.at(-1, -3) - 128.0 / 255.0).abs() < 1e-6);
+        assert_eq!(region.at(0, -3), 0.0);
+        assert_eq!(region.at(-2, -2), 0.0);
+        assert_eq!(region.at(-3, -3), 0.0);
+
+        let extreme = Region { bbox: Rect::new(i32::MIN, i32::MIN, i32::MAX, i32::MAX), mask: vec![] };
+        assert_eq!(extreme.at(i32::MAX - 1, i32::MAX - 1), 0.0);
+        assert_eq!(extreme.at(i32::MIN, i32::MIN), 0.0);
     }
 
     #[test]

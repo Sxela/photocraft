@@ -71,7 +71,7 @@ pub fn layout(row: Rect, name_left: f32, items: &[(Indicator, f32)]) -> (Vec<(In
 /// Width the always-shown indicators of `l` take at the row's right (blend label excluded).
 pub fn reserved_width(l: &Layer) -> f32 {
     let mut w = RIGHT_PAD;
-    if l.locks.transparency || l.locks.position || l.locks.all {
+    if l.locks.any() {
         w += ICON_W + GAP;
     }
     if !l.effects.items.is_empty() {
@@ -113,7 +113,7 @@ pub fn indicators(
     actions: &mut Vec<(String, Value)>,
 ) -> (f32, Vec<(Indicator, Rect)>, bool) {
     let t = Tokens::get(ui.ctx());
-    let locked = l.locks.transparency || l.locks.position || l.locks.all;
+    let locked = l.locks.any();
     let fx_font = theme::semibold(11.0);
     let blend_font = FontId::proportional(10.5);
     let has_fx = !l.effects.items.is_empty();
@@ -295,8 +295,20 @@ pub fn end_rename(ctx: &egui::Context, commit: bool) -> Option<(String, Value)> 
     if commit { r.commit_action() } else { None }
 }
 
+/// Where Tab or ⇧Tab sends a rename: the layer it left and whether the next one is above.
+fn next_rename_id() -> egui::Id {
+    egui::Id::new("layer-rename-next")
+}
+
+/// The rename that Tab (`up` false) or ⇧Tab (`up` true) just left on `layer`, for the Layers panel
+/// to continue on the layer below or above, as Photoshop does. Taken once.
+pub fn take_next_rename(ctx: &egui::Context) -> Option<(u64, bool)> {
+    ctx.data_mut(|d| d.remove_temp::<(u64, bool)>(next_rename_id()))
+}
+
 /// Draw the rename field of `layer` in `rect` when it is the one being renamed, and handle its
-/// keys and focus. Returns the rename command when it was committed this frame.
+/// keys and focus. Returns the rename command when it was committed this frame. Tab and ⇧Tab
+/// commit too and ask for the next rename ([`take_next_rename`]).
 pub fn rename_field(ui: &mut egui::Ui, layer: u64, rect: Rect) -> Option<(String, Value)> {
     let ctx = ui.ctx().clone();
     let mut r = rename(&ctx).filter(|r| r.layer == layer)?;
@@ -316,6 +328,10 @@ pub fn rename_field(ui: &mut egui::Ui, layer: u64, rect: Rect) -> Option<(String
         return None;
     }
     let (enter, tab, esc) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Tab), i.key_pressed(egui::Key::Escape)));
+    if tab {
+        let up = ctx.input(|i| i.modifiers.shift);
+        ctx.data_mut(|d| d.insert_temp(next_rename_id(), (layer, up)));
+    }
     if esc {
         store(&ctx, None);
         None

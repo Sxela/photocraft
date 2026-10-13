@@ -90,14 +90,40 @@ pub fn clamp_axis(center: f32, len: f32, size: f32, zoom: f32) -> f32 {
 /// Apply Preferences › Tools › Overscroll (off) to `view` for a canvas of `size` points on a
 /// display with `ppp` physical pixels per point. True when the view moved (then repaint).
 pub fn clamp_view(view: &mut View, size: egui::Vec2, ppp: f32) -> bool {
+    clamp_view_with_aspect(view, size, ppp, 1.0)
+}
+
+/// Clamp against the displayed image bounds, so rotated tool auto-scroll is not undone by
+/// the next frame's Overscroll-off clamp. `size` is the unmodified screen-space canvas size.
+pub fn clamp_view_with_aspect(view: &mut View, size: egui::Vec2, ppp: f32, aspect: f32) -> bool {
     let [w, h] = view.doc_size;
     if w == 0 || h == 0 {
         return false;
     }
     let zoom = view.zoom / if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
-    let c = [clamp_axis(view.center[0], w as f32, size.x, zoom), clamp_axis(view.center[1], h as f32, size.y, zoom)];
+    let aspect = if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 };
+    let c = if view.rotation.abs() < 1e-8 {
+        [clamp_axis(view.center[0], w as f32, size.x / aspect, zoom), clamp_axis(view.center[1], h as f32, size.y, zoom)]
+    } else {
+        if !zoom.is_finite() || zoom <= 0.0 || !size.is_finite() || size.x <= 0.0 || size.y <= 0.0 {
+            return false;
+        }
+        let center = [
+            if view.center[0].is_finite() { view.center[0] } else { w as f32 / 2.0 },
+            if view.center[1].is_finite() { view.center[1] } else { h as f32 / 2.0 },
+        ];
+        let xf = crate::canvas::ViewXform { rect: egui::Rect::from_min_size(Pos2::ZERO, size), zoom, center, flip: false, rotation: view.rotation, aspect };
+        let image = xf.image_bounds(view.doc_size);
+        if !image.is_finite() {
+            return false;
+        }
+        let offset = xf.rect.center() - image.min;
+        let delta = vec2(clamp_axis(offset.x, image.width(), size.x, 1.0), clamp_axis(offset.y, image.height(), size.y, 1.0)) - offset;
+        let d = xf.unmap_vec(delta) / zoom;
+        [center[0] + d.x, center[1] + d.y]
+    };
     // Ignore sub-pixel float noise so the clamp never keeps requesting frames.
-    let moved = (c[0] - view.center[0]).abs() > 1e-3 || (c[1] - view.center[1]).abs() > 1e-3;
+    let moved = !view.center[0].is_finite() || !view.center[1].is_finite() || (c[0] - view.center[0]).abs() > 1e-3 || (c[1] - view.center[1]).abs() > 1e-3;
     if moved {
         view.center = c;
     }
@@ -124,9 +150,10 @@ pub fn bar_rects(rect: Rect, horizontal: bool, vertical: bool) -> (Option<Rect>,
 
 /// Show the scrollbars of the canvas `rect` and apply their drags and page clicks to `view`.
 /// `flip` is View › Flip Horizontal (the bar then runs the other way through the image);
-/// `overscroll` is Preferences › Tools › Overscroll.
+/// `aspect` is the displayed pixel aspect ratio (a document pixel is that many points wider per
+/// point of height); `overscroll` is Preferences › Tools › Overscroll.
 /// Returns true when the pointer is over a bar (the canvas then leaves the pointer alone).
-pub fn show(ui: &Ui, rect: Rect, view: &mut View, flip: bool, overscroll: bool, key: Id) -> bool {
+pub fn show(ui: &Ui, rect: Rect, view: &mut View, flip: bool, aspect: f32, overscroll: bool, key: Id) -> bool {
     let [w, h] = view.doc_size;
     // `Span` works in egui points; `View::zoom` is device pixels per document pixel.
     let ppp = ui.ctx().pixels_per_point();
@@ -134,7 +161,8 @@ pub fn show(ui: &Ui, rect: Rect, view: &mut View, flip: bool, overscroll: bool, 
     // Horizontal axis in "screen order": with the view flipped, run the image backwards.
     let hx = |c: f32| if flip { w as f32 - c } else { c };
     let with_extent = |s: Span| (s, s.extent(overscroll));
-    let ex = Span::of(w as f32, hx(view.center[0]), rect.width(), zoom).map(with_extent);
+    let aspect = if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 };
+    let ex = Span::of(w as f32, hx(view.center[0]), rect.width() / aspect, zoom).map(with_extent);
     let ey = Span::of(h as f32, view.center[1], rect.height(), zoom).map(with_extent);
     if ex.is_none() && ey.is_none() {
         return false;

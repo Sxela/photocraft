@@ -162,6 +162,18 @@ fn the_web_hands_over_contents_rather_than_paths() {
 }
 
 #[test]
+fn the_web_opens_every_selected_file() {
+    let files = vec![("one.png".into(), b"x".to_vec()), ("broken.png".into(), b"bad".to_vec()), ("two.jpg".into(), b"x".to_vec())];
+    let (mut app, _) = app_with(vec![Some(FileDialogAnswer::ContentsMany(files))]);
+    menus::invoke(&mut app, &egui::Context::default(), "file.open", json!({})).unwrap();
+    answer(&mut app);
+    // Each good file is its own tab; the broken one is reported without stopping the rest.
+    let names: Vec<_> = app.session.documents().iter().map(|st| st.doc.name.as_str()).collect();
+    assert_eq!(names, ["one.png", "two.jpg"]);
+    assert!(app.ui.notices.iter().any(|n| n.error && n.title.contains("broken.png")), "{:?}", app.ui.notices);
+}
+
+#[test]
 fn pcraft_documents_save_in_place_but_flat_files_ask() {
     let (mut app, written) = app_with(vec![None]);
     let ctx = egui::Context::default();
@@ -604,7 +616,8 @@ fn views_and_windows_stay_with_their_documents() {
     for (i, v) in app.ui.views.iter_mut().enumerate() {
         v.zoom = i as f32 + 1.0;
     }
-    app.ui.windows = (0..4).map(|document| crate::state::DocWindow { id: document as u64, document, view: Default::default(), open: true }).collect();
+    app.ui.windows =
+        (0..4).map(|document| crate::state::DocWindow { id: document as u64, document, view: Default::default(), open: true, position: None }).collect();
     let zooms = |app: &PhotocraftApp| app.ui.views.iter().map(|v| v.zoom).collect::<Vec<_>>();
     let windows = |app: &PhotocraftApp| app.ui.windows.iter().map(|w| (w.id, w.document)).collect::<Vec<_>>();
     assert_eq!(app.run("document.move", json!({"document": 0, "to": 3})).unwrap(), json!({"document": 3}));
@@ -692,4 +705,158 @@ fn open_documents_as_tabs_preference_controls_floating_windows() {
     app.session.edit_prefs(|p| p.workspace.open_documents_as_tabs = true);
     app.open_bytes("b.psd", b"x").unwrap();
     assert_eq!(app.ui.windows.len(), 2);
+}
+
+#[test]
+fn natural_order_counts_numbers_by_value() {
+    use std::cmp::Ordering;
+    assert_eq!(natural_cmp("File_2.psd", "File_10.psd"), Ordering::Less);
+    assert_eq!(natural_cmp("file_1.psd", "File_2.psd"), Ordering::Less, "case-insensitive");
+    assert_eq!(natural_cmp("File_03.psd", "File_10.psd"), Ordering::Less, "leading zeros");
+    assert_eq!(natural_cmp("a.psd", "a.psd"), Ordering::Equal);
+    assert_eq!(natural_cmp("a", "ab"), Ordering::Less);
+    assert_eq!(natural_cmp("File_02.psd", "File_2.psd").then(Ordering::Equal), "File_02.psd".cmp("File_2.psd"), "equal by value: by text");
+    let mut names = vec!["File_10.psd", "File_9.psd", "file_1.psd", "File_100.psd", "b.psd", "A.psd", "File_03.psd"];
+    names.sort_by(|a, b| natural_cmp(a, b));
+    assert_eq!(names, ["A.psd", "b.psd", "file_1.psd", "File_03.psd", "File_9.psd", "File_10.psd", "File_100.psd"]);
+}
+
+/// #3248: several files opened at once (File › Open, the command line, Finder) open in name order.
+#[test]
+fn open_paths_opens_a_set_in_name_order() {
+    let (dir, paths) = files("sorted", &["File_10.psd", "File_2.psd", "file_1.psd", "File_03.psd"], b"x");
+    let (mut app, _) = app_with(Vec::new());
+    assert_eq!(app.open_paths(&paths), 4);
+    assert_eq!(doc_names(&app), ["file_1.psd", "File_2.psd", "File_03.psd", "File_10.psd"]);
+    assert_eq!(app.session.active().and_then(|s| s.path.clone()).as_deref(), Some(paths[0].as_str()), "the last in order is active");
+    assert!(app.jobs.batches.is_empty(), "nothing left opening");
+    // The next set goes after.
+    let (dir2, more) = files("sorted-2", &["b.psd", "a.psd"], b"x");
+    assert_eq!(app.open_paths(&more), 2);
+    assert_eq!(doc_names(&app), ["file_1.psd", "File_2.psd", "File_03.psd", "File_10.psd", "a.psd", "b.psd"]);
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}
+
+/// #3248: a set opening in the background keeps its order however the opens finish (a small file
+/// decodes before a big one named before it).
+#[test]
+fn a_set_of_background_opens_keeps_its_order_however_they_finish() {
+    use crate::jobs_ui::{self, OpenOrder, OpenTab};
+    use photocraft_engine::jobs::JobId;
+    let (mut app, _) = app_with(Vec::new());
+    app.open_bytes("existing.psd", b"x").unwrap();
+    let batch = jobs_ui::begin_batch(&mut app);
+    let tab = |seq: usize| OpenTab { job: JobId(100 + seq as u64), name: format!("f{seq}.psd"), path: None, slot: None, order: Some(OpenOrder { batch, seq }) };
+    app.jobs.opens.extend((0..4).map(tab));
+    // f1 opened at once (a preset file, say, or background jobs off for it).
+    app.jobs.opens.remove(1);
+    let index = app.session.add_document(Document::new("f1.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    assert_eq!(index, 1);
+    jobs_ui::opened_in_order(&mut app.jobs, OpenOrder { batch, seq: 1 });
+    jobs_ui::end_batch(&mut app.jobs);
+    assert_eq!(app.jobs.batches.len(), 1, "kept while members are opening");
+    // The rest finish out of order: last, first, third.
+    for seq in [3usize, 0, 2] {
+        let i = app.jobs.opens.iter().position(|o| o.order.is_some_and(|x| x.seq == seq)).unwrap();
+        let tab = app.jobs.opens.remove(i);
+        let index = app.session.add_document(Document::new(&tab.name, Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+        jobs_ui::finish_open_tab(&mut app, &tab, &json!({"document": index})).unwrap();
+    }
+    assert_eq!(doc_names(&app), ["existing.psd", "f0.psd", "f1.psd", "f2.psd", "f3.psd"]);
+    assert_eq!(app.session.active().map(|d| d.doc.name.as_str()), Some("f2.psd"), "the one that just opened is active");
+    assert_eq!(app.ui.views.len(), 5, "views follow their documents");
+    assert!(app.jobs.batches.is_empty(), "forgotten once every member opened");
+    // A tab with a slot (dropped on the tabs) keeps it; one from a forgotten set goes to the end.
+    let dropped = OpenTab { job: JobId(200), name: "dropped.psd".into(), path: None, slot: Some(0), order: None };
+    let index = app.session.add_document(Document::new("dropped.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    jobs_ui::finish_open_tab(&mut app, &dropped, &json!({"document": index})).unwrap();
+    let late = OpenTab { job: JobId(201), name: "late.psd".into(), path: None, slot: None, order: Some(OpenOrder { batch: 999, seq: 0 }) };
+    let index = app.session.add_document(Document::new("late.psd", Size::new(4, 4), ColorMode::Rgb, SampleType::U8), None);
+    jobs_ui::finish_open_tab(&mut app, &late, &json!({"document": index})).unwrap();
+    assert_eq!(doc_names(&app), ["dropped.psd", "existing.psd", "f0.psd", "f1.psd", "f2.psd", "f3.psd", "late.psd"]);
+}
+
+/// #4373: Save a Copy is recorded in an action, like Save and Save As, and played back as a copy:
+/// the document keeps its own file and unsaved changes.
+#[test]
+fn save_a_copy_is_recorded_and_replayed_as_a_copy() {
+    let (mut app, written) = app_with(vec![Some(FileDialogAnswer::SaveTo("/pics/copy.png".into()))]);
+    let ctx = egui::Context::default();
+    app.open_file("/pics/work.pcraft", b"x").unwrap();
+    app.run("layer.new.layer", json!({})).unwrap();
+    app.run("actions.record", json!({})).unwrap();
+    app.run("edit.fill", json!({"color": "#ff0000"})).unwrap();
+    menus::invoke(&mut app, &ctx, "file.saveACopy", json!({})).unwrap();
+    answer(&mut app);
+    app.run("actions.stop", json!({})).unwrap();
+    assert_eq!(app.session.actions.list[0].steps.last(), Some(&("file.saveACopy".to_string(), json!({"path": "/pics/copy.png"}))));
+    assert_eq!(crate::actions::label_of("file.saveACopy"), "Save a Copy");
+    written.borrow_mut().clear();
+    let played = app.run("actions.play", json!({"action": 0})).unwrap();
+    assert!(played.get("failed").is_none(), "{played}");
+    assert_eq!(written.borrow().iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(), ["/pics/copy.png"]);
+    let st = app.session.active().unwrap();
+    assert_eq!(st.path.as_deref(), Some("/pics/work.pcraft"), "the document keeps its file");
+    assert!(st.is_dirty(), "and its unsaved changes");
+}
+
+/// #4400: a new document saved under a name is listed in Open Recent (and on the Home screen),
+/// as opening it is; a Save a Copy isn't, since the document doesn't live there.
+#[test]
+fn saving_a_new_document_lists_it_in_recent_files() {
+    let (mut app, _written) = app_with(vec![Some(FileDialogAnswer::SaveTo("/pics/new.psd".into())), Some(FileDialogAnswer::SaveTo("/pics/copy.png".into()))]);
+    let ctx = egui::Context::default();
+    app.run("file.new", json!({"width": 4, "height": 4})).unwrap();
+    assert!(app.ui.recent_files.is_empty());
+    menus::invoke(&mut app, &ctx, "file.saveAs", json!({})).unwrap();
+    answer(&mut app);
+    assert_eq!(app.ui.recent_files, ["/pics/new.psd"]);
+    assert_eq!(app.session.prefs().file_handling.recent_files, ["/pics/new.psd"], "kept for the next launch");
+    menus::invoke(&mut app, &ctx, "file.saveACopy", json!({})).unwrap();
+    answer(&mut app);
+    assert_eq!(app.ui.recent_files, ["/pics/new.psd"], "a copy isn't the document's file");
+}
+
+/// #4559: a file whose type uses a font that isn't installed opens with a notice naming it, as
+/// Photoshop warns on open (the CLI and automation already did); the file still opens. Type in
+/// an installed face adds nothing, and a font the importer already warned about isn't repeated.
+#[test]
+fn opening_type_in_a_missing_font_warns() {
+    fn doc_with_type(font: Option<&str>) -> Document {
+        let mut s = photocraft_engine::Session::new();
+        s.execute("file.new", json!({"width": 40, "height": 20})).unwrap();
+        let mut p = json!({"text": "Hi", "x": 2, "y": 12, "size": 10});
+        if let Some(f) = font {
+            p["font"] = json!(f);
+        }
+        s.execute("type.create", p).unwrap();
+        (*s.active().unwrap().doc).clone()
+    }
+    const MISSING: &str = "NoSuchFamily4559";
+    let warning = format!("font '{MISSING}' is not installed; text may render using a fallback face");
+    let (with_missing, installed) = (doc_with_type(Some(MISSING)), doc_with_type(None));
+    let already = warning.clone();
+    let services = Services {
+        import: Some(Box::new(move |name: &str, _bytes: &[u8], _depth: usize| {
+            Ok(match name {
+                "installed.psd" => (installed.clone(), Vec::new()),
+                "warned.psd" => (with_missing.clone(), vec![already.clone()]),
+                _ => (with_missing.clone(), Vec::new()),
+            })
+        })),
+        ..Default::default()
+    };
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), services);
+    let warnings = app.open_bytes("poster.psd", b"x").unwrap();
+    assert_eq!(warnings, vec![warning.clone()]);
+    assert!(app.ui.status.contains(MISSING), "{}", app.ui.status);
+    assert_eq!(app.ui.notices.len(), 1);
+    assert_eq!(app.ui.notices[0].lines, vec![warning.clone()]);
+    assert_eq!(app.session.documents().len(), 1, "the file still opens");
+    // Type in an installed face: no notice.
+    assert!(app.open_bytes("installed.psd", b"x").unwrap().is_empty());
+    assert_eq!(app.ui.notices.len(), 1);
+    // The importer's own warning for the same font isn't doubled.
+    assert_eq!(app.open_bytes("warned.psd", b"x").unwrap(), vec![warning]);
 }

@@ -219,6 +219,38 @@ fn delete_and_fill_selection_removes_the_object_in_one_step() {
 }
 
 #[test]
+fn content_aware_fill_on_an_empty_layer_samples_the_composite() {
+    let mut s = blob_session(8);
+    s.execute("layer.new.layer", json!({})).unwrap();
+    let empty = s.active().unwrap().active_layer.unwrap();
+    assert_eq!(px(&s, 30, 20)[3], 0.0, "the new layer has no paint");
+    let r = s.execute("edit.contentAwareFill", json!({"colorAdaptation": "none"})).unwrap();
+    assert!(r["filled"].as_u64().unwrap() > 0);
+    assert_eq!(s.active().unwrap().active_layer, Some(empty));
+    assert!(px(&s, 30, 20)[3] > 0.5, "the hole is filled from the layers underneath");
+    s.undo();
+    let missed = s.execute("edit.contentAwareFill", json!({"sampleAllLayers": false, "colorAdaptation": "none"})).unwrap();
+    assert!(missed["filled"].as_u64().unwrap() > 0);
+    assert!(px(&s, 30, 20)[3] < 0.05, "sampling only the empty layer leaves it empty");
+}
+
+#[test]
+fn content_aware_fill_on_an_empty_cmyk_layer_uses_the_layer_format() {
+    let mut s = Session::new();
+    s.execute("file.new", json!({"width": 48, "height": 36, "mode": "cmyk", "background": "white"})).unwrap();
+    s.execute("select.rect", json!({"x": 16, "y": 12, "width": 12, "height": 10})).unwrap();
+    s.execute("layer.new.layer", json!({})).unwrap();
+    let before = px(&s, 20, 16);
+    assert!(before.iter().all(|c| *c < 0.05), "the new CMYK layer is empty: {before:?}");
+    s.execute("edit.contentAwareFill", json!({"colorAdaptation": "none"})).unwrap();
+    let v = px(&s, 20, 16);
+    assert_eq!(v.len(), before.len());
+    // White in the layer's CMYK is near zero ink with a covered alpha, not the compositor's RGBA.
+    assert!(v[..4].iter().all(|c| *c < 0.15), "CMYK ink stayed low: {v:?}");
+    assert!(v.last().copied().unwrap_or(0.0) > 0.5, "the hole is covered: {v:?}");
+}
+
+#[test]
 fn content_aware_fill_samples_photoshops_window() {
     // A 50 px selection samples the 200 px square centred on it (Photoshop 25.4's overlay);
     // at the canvas edge the square slides inwards. Edit › Fill uses the same window.
@@ -296,6 +328,34 @@ fn content_aware_scale_params() {
     assert_eq!(r["to"], json!([48, 16]));
     assert!(s.execute("edit.contentAwareScale", json!({"width": 0})).is_err());
     assert!(s.execute("edit.contentAwareScale", json!({"protect": "no such channel"})).is_err());
+}
+
+#[test]
+fn content_aware_scale_places_the_result_and_previews_it_reduced() {
+    // The transform box (#3096) moves the result with `x`/`y` and previews it on a reduced copy.
+    for depth in [8, 16, 32] {
+        let mut s = session(depth);
+        s.execute("layer.new.layer", json!({})).unwrap();
+        s.edit("paint", |doc, active| {
+            doc.layer_mut(active.unwrap()).unwrap().surface_mut().unwrap().fill_rect(Rect::new(4, 4, 36, 28), &[0.2, 0.4, 0.6, 1.0]);
+            Ok(())
+        })
+        .unwrap();
+        let p = json!({"width": 16, "height": 40, "x": 10, "y": 2});
+        let preview = super::ContentAwareScalePreview::new(&s, &p, 10).unwrap();
+        assert_eq!(preview.region(), Rect::new(4, 4, 36, 28));
+        let small = preview.run(&crate::jobs::JobCtx::new()).unwrap();
+        assert_eq!(small.content_bounds(), Rect::new(0, 0, 4, 10), "depth {depth}: the longest side, 40 px, previews at 10");
+        let past = s.active().unwrap().history.past_len();
+        let r = s.execute("edit.contentAwareScale", p).unwrap();
+        assert_eq!(r["bounds"], json!([10, 2, 16, 40]));
+        assert_eq!(active(&s).surface().unwrap().content_bounds(), Rect::from_xywh(10, 2, 16, 40), "depth {depth}");
+        assert_eq!(s.active().unwrap().history.past_len(), past + 1, "depth {depth}: one step");
+        for bad in [json!({"x": "left"}), json!({"y": 1e9})] {
+            assert!(s.execute("edit.contentAwareScale", bad.clone()).is_err(), "{bad}");
+            assert!(super::ContentAwareScalePreview::new(&s, &bad, 64).is_err(), "{bad}");
+        }
+    }
 }
 
 #[test]
@@ -419,6 +479,27 @@ fn find_and_replace_across_type_layers() {
 }
 
 #[test]
+fn find_and_replace_change_rejects_a_layer_locked_after_the_find() {
+    // #4188: the found match's layer gets Lock All before Change; the text must stay.
+    let mut s = session(8);
+    let id = s.execute("type.create", json!({"text": "abc", "x": 2, "y": 12})).unwrap()["layer"].as_u64().unwrap();
+    // A second, unlocked type layer keeps the command enabled.
+    s.execute("type.create", json!({"text": "zzz", "x": 2, "y": 40})).unwrap();
+    let found = s.execute("edit.findAndReplaceText", json!({"find": "abc", "action": "find"})).unwrap();
+    assert_eq!(found["found"]["layer"].as_u64(), Some(id));
+    s.execute("layer.setProps", json!({"layer": id, "locked": true})).unwrap();
+    let history = s.active().unwrap().history.past_len();
+    let result = s.execute("edit.findAndReplaceText", json!({"find": "abc", "replace": "x", "action": "change"}));
+    assert!(matches!(&result, Err(EngineError::Other(message)) if message.contains("locked")), "{result:?}");
+    let text = match &s.active().unwrap().doc.layer(LayerId(id)).unwrap().content {
+        LayerContent::Text(t) => t.text.clone(),
+        _ => String::new(),
+    };
+    assert_eq!(text, "abc");
+    assert_eq!(s.active().unwrap().history.past_len(), history);
+}
+
+#[test]
 fn find_in_the_active_layer_finds_nothing_when_it_is_not_type() {
     // #703: `allLayers: false` with a raster layer active leaves nothing to search.
     let mut s = session(8);
@@ -439,4 +520,27 @@ fn find_in_the_active_layer_finds_nothing_when_it_is_not_type() {
     s.execute("layer.select", json!({"layer": id})).unwrap();
     let r = s.execute("edit.findAndReplaceText", json!({"find": "abc", "allLayers": false, "action": "find"})).unwrap();
     assert_eq!((r["found"]["layer"].as_u64(), r["found"]["text"].as_str()), (Some(id), Some("abc")));
+}
+
+#[test]
+fn backward_change_find_moves_past_the_replaced_text() {
+    // A backward Change/Find whose replacement still matches ("cat" -> "Cat", case-insensitive)
+    // must move on to the previous match, not find the replaced text again.
+    let mut s = session(8);
+    s.execute("type.create", json!({"text": "cat dog cat", "x": 2, "y": 12})).unwrap();
+    let p = |action: &str, forward: bool| json!({"find": "cat", "replace": "Cat", "action": action, "forward": forward, "allLayers": false});
+    let f = s.execute("edit.findAndReplaceText", p("find", false)).unwrap();
+    assert_eq!((f["found"]["start"].as_u64(), f["found"]["end"].as_u64()), (Some(8), Some(11)), "{f}");
+    let r = s.execute("edit.findAndReplaceText", p("changeFind", false)).unwrap();
+    assert_eq!((r["changed"]["start"].as_u64(), r["changed"]["end"].as_u64()), (Some(8), Some(11)), "{r}");
+    assert_eq!((r["found"]["start"].as_u64(), r["found"]["end"].as_u64()), (Some(0), Some(3)), "{r}");
+
+    // Forward is unchanged: replace the first match, then find the next one.
+    let mut s = session(8);
+    s.execute("type.create", json!({"text": "cat dog cat", "x": 2, "y": 12})).unwrap();
+    let f = s.execute("edit.findAndReplaceText", p("find", true)).unwrap();
+    assert_eq!(f["found"]["start"].as_u64(), Some(0), "{f}");
+    let r = s.execute("edit.findAndReplaceText", p("changeFind", true)).unwrap();
+    assert_eq!((r["changed"]["start"].as_u64(), r["changed"]["end"].as_u64()), (Some(0), Some(3)), "{r}");
+    assert_eq!((r["found"]["start"].as_u64(), r["found"]["end"].as_u64()), (Some(8), Some(11)), "{r}");
 }

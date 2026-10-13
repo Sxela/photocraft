@@ -11,7 +11,7 @@ pub(crate) const MAX_RENDER_PIXELS: u64 = 64 * 1024 * 1024;
 /// Renders `t` from its model unless its ink would exceed [`MAX_RENDER_PIXELS`].
 fn render_bounded(eng: &mut photocraft_text::TextEngine, t: &mut TextLayer, dpi: f32, format: photocraft_color::PixelFormat) {
     let layout = eng.layout(t, dpi);
-    let warp = photocraft_text::render::layout_warp(&layout, t.warp.as_ref());
+    let warp = photocraft_text::render::layout_deform(&layout, t);
     let ink = photocraft_text::render::ink_rect_warped(&layout, &t.transform, warp.as_ref());
     if u64::from(ink.width()).saturating_mul(u64::from(ink.height())) > MAX_RENDER_PIXELS {
         t.cache = Some(photocraft_raster::Surface::new(photocraft_color::PixelFormat { alpha: true, ..format }));

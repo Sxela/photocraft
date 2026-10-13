@@ -28,6 +28,7 @@ PsdFile::layers() -> &[LayerRecord]         // file order = bottom-most first
 PsdFile::layers_mut() -> &mut Vec<LayerRecord>
 PsdFile::layer(i) -> Option<Layer<'_>>;  iter_layers()
 PsdFile::layer_tree() -> Vec<LayerNode>     // nested groups, children bottom-to-top
+PsdFile::layer_tree_max_depth(n) -> Vec<LayerNode> // same, groups nested n deep keep no children
 PsdFile::decode_merged() -> Result<Vec<u8>> // planar big-endian samples
 PsdFile::composite_rgba8() -> Result<RgbaImage>
 PsdFile::resource(id), global_block(key), icc_profile(), resolution(),
@@ -98,7 +99,7 @@ testgen::{all_cases, merged_only, layered, small, sample_descriptor, pattern_pla
 | Layer masks | ✓ | ✓ | ✓ | 20 / 36-byte forms, mask parameters, real mask; unparseable masks stay raw |
 | Channel ids -1 / -2 / -3 | ✓ | ✓ | ✓ | per-channel rect via `channel_rect` |
 | Raw / RLE / ZIP / ZIP+prediction | ✓ | ✓ | – | prediction at 8/16/32 bits (32: byte-plane shuffle + delta); RLE counts are u16 in PSD, u32 in PSB |
-| Merged image data | ✓ | ✓ | – | validated at parse time (sizes, RLE counts, zlib stream incl. checksum) |
+| Merged image data | ✓ | ✓ | – | validated at parse time (sizes, RLE counts, zlib stream incl. checksum); a zlib stream declaring more than `MAX_DECODED_BYTES` is kept verbatim without inflating it, and decoding it reports the limit |
 | Tagged blocks (raw passthrough) | ✓ | ✓ | – | keeps `8BIM` / `8B64` and exact padding |
 | PSB 8-byte-length keys | ✓ | ✓ | – | LMsk Lr16 Lr32 Layr Mt16 Mt32 Mtrn Alph FMsk lnk2 FEid FXid PxSD |
 | Lr16 / Lr32 / Layr layer info | ✓ | ✓ | ✓ | lifted into `layer_info`; re-inserted at its original position |
@@ -108,6 +109,7 @@ testgen::{all_cases, merged_only, layered, small, sample_descriptor, pattern_pla
 | RGBA8 extraction | ✓ | – | – | RGB / gray / CMYK layers; merged image also supports indexed / bitmap / duotone |
 | Builder | – | ✓ | – | RGB / gray / CMYK at 8/16 bit, masks, groups, blend modes, opacity, fill, visibility, clipping |
 | Patterns | ✓ | ✓ | ✓ | `Patt` / `Pat2` / `Pat3`, `.pat`, and `.abr` embedded patterns; non-empty tiles allow in-bounds channel subrectangles, decoded size is capped and PackBits expansion is input-bounded |
+| Actions (`.atn`) | ✓ | ✓ | ✓ | `atn::parse` / `atn::write`: version-16 sets (Photoshop 6+): actions with function key, modifiers and colour; steps with event code or string name, panel name, enabled/dialog flags and their descriptor. Exact round trip; version-12 (Photoshop 5) files are rejected as unsupported |
 
 Pattern channel subrectangles are padded with zeroes to the tile rectangle. All channel
 metadata and the total padded size are checked against `MAX_DECODED_BYTES` before any

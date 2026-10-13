@@ -2,7 +2,7 @@
 //! ⌥ draws from the centre (both together work too), a "W × H px" readout follows the cursor, and
 //! modifiers held before the drag still pick add/subtract (#188) instead of constraining.
 
-use egui::{Modifiers, PointerButton, Pos2, vec2};
+use egui::{Modifiers, PointerButton, Pos2, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use photocraft_geom::Rect;
@@ -40,17 +40,21 @@ fn harness(tool: Tool) -> Harness<'static, PhotocraftApp> {
     h
 }
 
-fn screen(h: &Harness<'static, PhotocraftApp>, x: f32, y: f32) -> Pos2 {
+fn view_xform(h: &Harness<'static, PhotocraftApp>) -> ViewXform {
     let app = h.state();
     let v = &app.ui.views[0];
-    let xf = ViewXform {
+    ViewXform {
         rect: crate::rulers::content_rect(app, app.last_canvas_rect),
         zoom: v.zoom,
         center: v.center,
         flip: app.ui.view.flip_horizontal,
         rotation: v.rotation,
-    };
-    xf.to_screen(x, y)
+        aspect: app.ui.view.display_aspect(),
+    }
+}
+
+fn screen(h: &Harness<'static, PhotocraftApp>, x: f32, y: f32) -> Pos2 {
+    view_xform(h).to_screen(x, y)
 }
 
 fn mods(h: &mut Harness<'static, PhotocraftApp>, m: Modifiers) {
@@ -98,6 +102,37 @@ fn readout(h: &Harness<'static, PhotocraftApp>, w: i32, ht: i32) -> bool {
 }
 
 #[test]
+fn marquee_intent_is_captured_before_the_drag_threshold() {
+    for tool in [Tool::RectMarquee, Tool::EllipseMarquee] {
+        for at_press in [Modifiers::NONE, Modifiers::SHIFT] {
+            let mut h = harness(tool);
+            h.state_mut().ui.extras.snap = false;
+            h.state_mut().run("select.rect", json!({"x": 10, "y": 10, "width": 20, "height": 20})).unwrap();
+            mods(&mut h, at_press);
+            move_to(&mut h, 100.0, 100.0);
+            let start = screen(&h, 100.0, 100.0);
+            button(&mut h, start, true, at_press);
+            assert!(h.state().drag.is_none(), "still below the drag threshold");
+            // Change Shift while the pointer is still at the press, before egui starts a drag.
+            let during = if at_press.shift { Modifiers::NONE } else { Modifiers::SHIFT };
+            mods(&mut h, during);
+            move_to(&mut h, 180.0, 130.0);
+            assert!(readout(&h, 80, if at_press.shift { 30 } else { 80 }), "{tool:?}, Shift at press: {}", at_press.shift);
+            release_at(&mut h, 180.0, 130.0, during);
+            let st = h.state().session.active().unwrap();
+            let sel = st.doc.selection.as_ref().unwrap();
+            if at_press.shift {
+                assert!(sel.sample_channel(20, 20, 0) > 0.99, "Shift at the press keeps Add mode");
+                assert_eq!(selection(&h), Rect::new(10, 10, 180, 130));
+            } else {
+                assert!(sel.sample_channel(20, 20, 0) < 0.01, "Shift after the press constrains a replacement");
+                assert_eq!(selection(&h), Rect::new(100, 100, 180, 180));
+            }
+        }
+    }
+}
+
+#[test]
 fn shift_during_the_drag_draws_a_square_and_the_readout_follows() {
     let mut h = harness(Tool::RectMarquee);
     press_at(&mut h, 50.0, 50.0, Modifiers::NONE);
@@ -110,6 +145,48 @@ fn shift_during_the_drag_draws_a_square_and_the_readout_follows() {
     mods(&mut h, Modifiers::NONE);
     assert_eq!(selection(&h), Rect::new(50, 50, 150, 150));
     assert!(h.query_by_label("W:").is_none() && h.query_by_label_contains(" px").is_none(), "the readout goes away with the drag");
+}
+
+/// #204: Preferences › Tools › Show Transformation Values off hides the readout, not the marquee.
+#[test]
+fn show_transformation_values_off_hides_the_readout() {
+    for shown in [false, true] {
+        let mut h = harness(Tool::RectMarquee);
+        h.state_mut().run("prefs.set", json!({"path": "tools.showTransformationValues", "value": shown})).unwrap();
+        press_at(&mut h, 50.0, 50.0, Modifiers::NONE);
+        move_to(&mut h, 150.0, 90.0);
+        assert_eq!(readout(&h, 100, 40), shown, "shown: {shown}");
+        if !shown {
+            assert!(h.query_by_label("W:").is_none() && h.query_by_label_contains(" px").is_none());
+        }
+        release_at(&mut h, 150.0, 90.0, Modifiers::NONE);
+        assert_eq!(selection(&h), Rect::new(50, 50, 150, 90), "the marquee still selects");
+    }
+}
+
+/// #204: the Free Transform readout (#1767) follows Show Transformation Values too.
+#[test]
+fn show_transformation_values_off_hides_the_free_transform_readout() {
+    use crate::canvas::{ToolEvent, tool_event};
+    for shown in [false, true] {
+        let mut h = harness(Tool::Move);
+        let app = h.state_mut();
+        app.run("prefs.set", json!({"path": "tools.showTransformationValues", "value": shown})).unwrap();
+        app.run("layer.new.layer", json!({})).unwrap();
+        app.run("select.all", json!({})).unwrap();
+        app.run("edit.fill", json!({"color": "#3366cc"})).unwrap();
+        app.run("select.deselect", json!({})).unwrap();
+        app.ui.extras.snap = false;
+        crate::menus::invoke(app, &egui::Context::default(), "edit.freeTransform", json!({})).unwrap();
+        // Move the box by dragging inside it (away from the centre pivot), then hover there.
+        tool_event(app, ToolEvent::Down { x: 100.0, y: 100.0, pressure: 1.0 }, Modifiers::NONE);
+        tool_event(app, ToolEvent::Move { x: 130.0, y: 120.0, pressure: 1.0 }, Modifiers::NONE);
+        assert!(crate::transform_tool::live_readout(h.state()).is_some(), "a live readout to show");
+        let at = screen(&h, 130.0, 120.0);
+        h.event(egui::Event::PointerMoved(at));
+        h.run_steps(2);
+        assert_eq!(h.query_by_label("ΔX:").is_some(), shown, "shown: {shown}");
+    }
 }
 
 #[test]
@@ -146,10 +223,120 @@ fn the_live_outline_snaps_to_pixels_and_matches_the_committed_selection() {
         press_at(&mut h, 10.3, 10.3, Modifiers::NONE);
         move_to(&mut h, 20.6, 15.4);
         let app = h.state();
-        let live = app.drag.as_ref().and_then(|d| crate::canvas::marquee_preview_px(&app.ui.tool_options, d)).unwrap();
+        let live = app.drag.as_ref().and_then(|d| crate::canvas::marquee_preview_px(&app.ui.tool_options, d, app.point_zoom())).unwrap();
         assert_eq!(live, [10.0, 10.0, 21.0, 16.0], "{tool:?}: whole pixels while dragging");
         release_at(&mut h, 20.6, 15.4, Modifiers::NONE);
         assert_eq!(selection(&h), Rect::new(10, 10, 21, 16), "{tool:?}: the commit is what was shown");
+    }
+}
+
+/// #2512: the hinting must follow the same transform as the release. With a rotated view the
+/// marquee projects onto a rotated rectangle, and an axis-aligned screen box drawn through its
+/// two diagonal corners is a different shape somewhere else entirely.
+#[test]
+fn the_live_outline_matches_the_committed_selection_in_a_rotated_view() {
+    for tool in [Tool::RectMarquee, Tool::EllipseMarquee] {
+        let mut h = harness(tool);
+        let v = &mut h.state_mut().ui.views[0];
+        v.rotation = 30.0;
+        h.run_steps(2);
+        press_at(&mut h, 50.0, 50.0, Modifiers::NONE);
+        move_to(&mut h, 150.0, 90.0);
+        let xf = view_xform(&h);
+        let (live, pts) = {
+            let app = h.state();
+            let d = app.drag.as_ref().expect("the drag is on");
+            let live = crate::canvas::marquee_preview_px(&app.ui.tool_options, d, app.point_zoom()).expect("a marquee is dragged");
+            // Exactly what the canvas paints for this drag.
+            (live, crate::canvas::marquee_drag_ants(d, &xf, Some(live)))
+        };
+        release_at(&mut h, 150.0, 90.0, Modifiers::NONE);
+        let sel = selection(&h);
+        // The pointer round-trips through f32 screen points, so a corner can land a hair over a
+        // pixel edge; what matters is that the rotation moves neither the selection nor the
+        // hinting, and that the release commits what was shown.
+        assert!(
+            (sel.x0 as f64 - live[0]).abs() <= 1.0
+                && (sel.y0 as f64 - live[1]).abs() <= 1.0
+                && (sel.x1 as f64 - live[2]).abs() <= 1.0
+                && (sel.y1 as f64 - live[3]).abs() <= 1.0,
+            "{tool:?}: the release commits what the hinting showed: {sel:?} vs {live:?}"
+        );
+        if tool == Tool::RectMarquee {
+            // Each corner is a corner of the dragged rectangle, mapped: an axis-aligned box
+            // through the two diagonal corners puts all four elsewhere.
+            let snap = |p: Pos2| pos2(p.x.round() + 0.5, p.y.round() + 0.5);
+            let want = [[live[0], live[1]], [live[2], live[1]], [live[2], live[3]], [live[0], live[3]]].map(|[x, y]| snap(xf.to_screen(x as f32, y as f32)));
+            for (i, (p, w)) in pts.iter().zip(want).enumerate() {
+                assert!((p.x - w.x).abs() < 0.01 && (p.y - w.y).abs() < 0.01, "{tool:?}: corner {i} at {p:?}, the dragged rectangle's corner is at {w:?}");
+            }
+        } else {
+            // Every point maps back onto the ellipse the drag drew.
+            let (cx, cy, rx, ry) = ((live[0] + live[2]) * 0.5, (live[1] + live[3]) * 0.5, (live[2] - live[0]) * 0.5, (live[3] - live[1]) * 0.5);
+            for p in &pts {
+                let [x, y] = xf.to_doc(*p);
+                let e = ((x - cx) / rx).powi(2) + ((y - cy) / ry).powi(2);
+                assert!((e - 1.0).abs() < 0.08, "{tool:?}: {p:?} maps back to ({x},{y}), off the dragged ellipse (e = {e})");
+            }
+        }
+    }
+}
+
+/// 800 %, snapping off, the view centred on (30, 30): the pointer lands between pixel edges.
+fn zoomed(tool: Tool) -> Harness<'static, PhotocraftApp> {
+    let mut h = harness(tool);
+    h.state_mut().ui.extras.snap = false;
+    let v = &mut h.state_mut().ui.views[0];
+    v.zoom = 8.0;
+    v.center = [30.0, 30.0];
+    h.run_steps(2);
+    h
+}
+
+/// Press at `from` and move to `to` in six ordinary pointer moves, the button still held.
+fn drag_to(h: &mut Harness<'static, PhotocraftApp>, from: [f32; 2], to: [f32; 2]) {
+    move_to(h, from[0], from[1]);
+    button(h, screen(h, from[0], from[1]), true, Modifiers::NONE);
+    for i in 1..=6 {
+        let t = i as f32 / 6.0;
+        move_to(h, from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t);
+    }
+}
+
+/// #2391: a one-pixel column or row shown while dragging (ants and readout) is the selection the
+/// release keeps, also when the drag starts outside a selection it replaces (Photoshop). A click
+/// without a drag still deselects.
+#[test]
+fn a_one_pixel_column_or_row_is_kept_on_release() {
+    for tool in [Tool::RectMarquee, Tool::EllipseMarquee] {
+        for (name, end, want) in [("column", [10.6, 50.4], Rect::new(10, 10, 11, 51)), ("row", [50.6, 10.8], Rect::new(10, 10, 51, 11))] {
+            for existing in [false, true] {
+                let mut h = zoomed(tool);
+                if existing {
+                    h.state_mut().run("select.rect", json!({"x": 100, "y": 100, "width": 10, "height": 10})).unwrap();
+                }
+                drag_to(&mut h, [10.2, 10.4], end);
+                let app = h.state();
+                let live = app.drag.as_ref().and_then(|d| crate::canvas::marquee_preview_px(&app.ui.tool_options, d, app.point_zoom()));
+                let shown = [want.x0, want.y0, want.x1, want.y1].map(f64::from);
+                assert_eq!(live, Some(shown), "{tool:?} {name} (existing {existing}): the outline while dragging");
+                assert!(readout(&h, want.width() as i32, want.height() as i32), "{tool:?} {name}: W/H readout");
+                let p = screen(&h, end[0], end[1]);
+                button(&mut h, p, false, Modifiers::NONE);
+                h.run_steps(2);
+                assert_eq!(selection(&h), want, "{tool:?} {name} (existing {existing}): the release keeps what was shown");
+                assert!(h.query_by_label("W:").is_none(), "the readout goes away with the drag");
+            }
+        }
+        // A plain click outside the selection deselects.
+        let mut h = zoomed(tool);
+        h.state_mut().run("select.rect", json!({"x": 100, "y": 100, "width": 10, "height": 10})).unwrap();
+        move_to(&mut h, 10.2, 10.4);
+        let p = screen(&h, 10.2, 10.4);
+        button(&mut h, p, true, Modifiers::NONE);
+        button(&mut h, p, false, Modifiers::NONE);
+        h.run_steps(2);
+        assert!(h.state().session.active().unwrap().doc.selection.is_none(), "{tool:?}: a click deselects");
     }
 }
 
@@ -194,6 +381,32 @@ fn modifiers_held_before_the_drag_pick_the_mode_not_the_shape() {
     let st = h.state().session.active().unwrap();
     let sel = st.doc.selection.as_ref().unwrap();
     assert!(sel.sample_channel(120, 110, 0) < 0.01 && sel.sample_channel(90, 110, 0) > 0.99, "subtracted, not centred");
+}
+
+/// #208: `⇧⌥` held at the press intersects, the third selection mode after add (`⇧`) and subtract
+/// (`⌥`). Like those, the modifier at the press picks the mode; here the keys are released once the
+/// press has fixed the mode, so the drag stays a plain rectangle and only the overlap of the
+/// existing selection and the dragged rectangle survives. The three sample points below are each in
+/// exactly one of {overlap, first-only, drag-only}, so they pass only for intersect, not for
+/// replace, add or subtract.
+#[test]
+fn shift_alt_before_the_drag_intersects_the_selection() {
+    let mut h = harness(Tool::RectMarquee);
+    // A: the existing selection, 50..200 on both axes.
+    h.state_mut().run("select.rect", json!({"x": 50, "y": 50, "width": 150, "height": 150})).unwrap();
+    let both = Modifiers::SHIFT | Modifiers::ALT;
+    mods(&mut h, both);
+    press_at(&mut h, 120.0, 120.0, both);
+    // Mode is fixed at the press; releasing the keys keeps intersect mode but leaves the drag a
+    // plain rectangle (no square/centre constraint), so B is roughly 120..300 on both axes.
+    mods(&mut h, Modifiers::NONE);
+    move_to(&mut h, 300.0, 300.0);
+    release_at(&mut h, 300.0, 300.0, Modifiers::NONE);
+    let st = h.state().session.active().unwrap();
+    let sel = st.doc.selection.as_ref().expect("a selection survives the intersect");
+    assert!(sel.sample_channel(160, 160, 0) > 0.99, "the overlap of the two rectangles stays selected");
+    assert!(sel.sample_channel(60, 60, 0) < 0.01, "a point only in the existing selection is dropped (not add)");
+    assert!(sel.sample_channel(260, 260, 0) < 0.01, "a point only in the dragged rectangle is dropped (not replace)");
 }
 
 /// `cargo test --release -p photocraft-ui-egui marquee_drag_bench -- --ignored --nocapture`
@@ -532,4 +745,79 @@ fn selection_cursor_follows_the_modifiers_and_the_floating_piece() {
     tool_event(&mut app, ToolEvent::Down { x: 20.0, y: 20.0, pressure: 1.0 }, none);
     tool_event(&mut app, ToolEvent::Move { x: 30.0, y: 20.0, pressure: 1.0 }, none);
     assert_eq!(selection_cursor(&app, Tool::RectMarquee, [30.0, 20.0], none), Some(SelCursor::Outline));
+}
+
+/// A click with `tool` at document point `(x, y)`, as the canvas sends it.
+fn click_with(app: &mut PhotocraftApp, tool: Tool, x: f64, y: f64, m: Modifiers) {
+    use crate::canvas::{ToolEvent, tool_event};
+    app.ui.tool = tool;
+    tool_event(app, ToolEvent::Down { x, y, pressure: 1.0 }, m);
+    tool_event(app, ToolEvent::Up { x, y }, m);
+}
+
+/// Single Row / Single Column Marquee (#2837): a click selects one pixel row (column) across the
+/// whole canvas; ⇧ adds, ⌥ subtracts, as with the other marquees.
+#[test]
+fn single_row_and_column_marquee_select_one_pixel_lines() {
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    app.run("file.new", json!({"width": 200, "height": 100})).unwrap();
+    app.ui.extras.snap = false;
+    let bounds = |app: &PhotocraftApp| app.session.active().unwrap().doc.selection.as_ref().map_or(Rect::EMPTY, |s| s.content_bounds());
+    let at = |app: &PhotocraftApp, x: i32, y: i32| app.session.active().unwrap().doc.selection.as_ref().map_or(0.0, |s| s.sample_channel(x, y, 0));
+
+    click_with(&mut app, Tool::SingleRowMarquee, 120.3, 37.6, Modifiers::NONE);
+    assert_eq!(bounds(&app), Rect::new(0, 37, 200, 38));
+    click_with(&mut app, Tool::SingleRowMarquee, 15.0, 60.2, Modifiers::SHIFT);
+    assert_eq!(bounds(&app), Rect::new(0, 37, 200, 61));
+    assert!(at(&app, 5, 37) > 0.99 && at(&app, 199, 60) > 0.99 && at(&app, 100, 50) < 0.01, "two rows, nothing between");
+    let step = |app: &PhotocraftApp| app.session.active().unwrap().history.undo_label().map(str::to_string);
+    assert_eq!(step(&app).as_deref(), Some("Single Row Marquee"), "History names the step after the tool (#3031)");
+
+    click_with(&mut app, Tool::SingleColumnMarquee, 42.9, 80.0, Modifiers::NONE);
+    assert_eq!(bounds(&app), Rect::new(42, 0, 43, 100));
+    assert_eq!(step(&app).as_deref(), Some("Single Column Marquee"));
+    click_with(&mut app, Tool::SingleColumnMarquee, 150.5, 3.0, Modifiers::SHIFT);
+    assert_eq!(bounds(&app), Rect::new(42, 0, 151, 100));
+    click_with(&mut app, Tool::SingleColumnMarquee, 42.0, 10.0, Modifiers::ALT);
+    assert_eq!(bounds(&app), Rect::new(150, 0, 151, 100), "⌥ subtracts the column");
+}
+
+/// The two single-line marquees sit in the Marquee flyout but M (⇧M) cycles only the
+/// Rectangular and Elliptical Marquee, as in Photoshop; automation picks them by name.
+#[test]
+fn m_cycles_only_the_rectangular_and_elliptical_marquee() {
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    let ctx = egui::Context::default();
+    app.ui.tool = Tool::SingleRowMarquee;
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        let raw = egui::RawInput {
+            events: vec![
+                egui::Event::Key { key: egui::Key::M, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::SHIFT },
+                egui::Event::Key { key: egui::Key::M, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::SHIFT },
+            ],
+            ..Default::default()
+        };
+        ctx.begin_pass(raw);
+        crate::shortcuts::handle(&mut app, &ctx);
+        ctx.end_pass().textures_delta.clear();
+        seen.push(app.ui.tool);
+    }
+    assert_eq!(seen, [Tool::RectMarquee, Tool::EllipseMarquee, Tool::RectMarquee, Tool::EllipseMarquee]);
+    assert_eq!(Tool::from_name("SingleRowMarquee"), Some(Tool::SingleRowMarquee));
+    assert_eq!(Tool::from_name("Single Column Marquee Tool"), Some(Tool::SingleColumnMarquee));
+}
+
+#[test]
+fn size_readout_follows_the_ruler_unit() {
+    use photocraft_engine::prefs::{Unit, UnitsAndRulers};
+    let mut ur = UnitsAndRulers::default();
+    // 1644 × 2659 px at 72 dpi: 58 cm wide
+    let r = [0.0, 0.0, 1644.0, 2659.0];
+    ur.rulers = Unit::Pixels;
+    assert_eq!(crate::canvas::readout_in(&ur, 72.0, [1644.0, 2659.0], r), ["1644 px".to_string(), "2659 px".to_string()]);
+    ur.rulers = Unit::Centimeters;
+    assert_eq!(crate::canvas::readout_in(&ur, 72.0, [1644.0, 2659.0], r), ["58 cm".to_string(), "93.8 cm".to_string()]);
+    ur.rulers = Unit::Millimeters;
+    assert_eq!(crate::canvas::readout_in(&ur, 150.0, [1644.0, 2659.0], [0.0, 0.0, 3425.0, 100.0])[0], "579.97 mm");
 }

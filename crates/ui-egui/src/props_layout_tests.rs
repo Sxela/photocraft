@@ -175,8 +175,12 @@ fn type_controls_fill_the_panel_at_every_width_and_scale() {
                 .map(|r| r.right())
                 .fold(f32::MIN, f32::max);
             // (Both rows have a unit suffix: compare with the size/leading row.)
-            let top = fields.iter().map(|r| r.top()).fold(f32::MAX, f32::min);
-            let lead = fields.iter().filter(|r| (r.top() - top).abs() < 0.5).map(|r| r.right()).fold(f32::MIN, f32::max);
+            // Variable-font axes can precede the size/leading row and have no unit suffix.
+            // Compare the intended point-valued controls, retaining the same edge tolerance.
+            let lead = ["Font size", "Leading (set to the font size × auto-leading when Auto)"]
+                .into_iter()
+                .map(|label| h.get_by_role_and_label(egui::accesskit::Role::SpinButton, label).rect().right())
+                .fold(f32::MIN, f32::max);
             assert!((t_right - lead).abs() < 0.5, "{what}: Transform fields end at {t_right}, Character at {lead}");
             // Quick Actions buttons span the panel too.
             let qa = h.get_by_label("Rasterize Type").rect();
@@ -261,5 +265,51 @@ fn layers_opacity_and_fill_share_one_right_column() {
         let (fl, fa) = row("Fill");
         assert!((oa.right() - fa.right()).abs() < 0.5, "{theme}: fields end at {} and {}", oa.right(), fa.right());
         assert!((ol.right() - fl.right()).abs() < 0.5, "{theme}: Opacity label ends at {}, Fill label at {}", ol.right(), fl.right());
+    }
+}
+
+#[test]
+fn properties_distribute_buttons_move_selected_layers_and_undo_in_both_axes() {
+    use photocraft_doc::LayerId;
+    for horizontal in [true, false] {
+        let mut s = photocraft_engine::Session::new();
+        s.execute("file.new", json!({"width": 300, "height": 300, "background": "transparent"})).unwrap();
+        let mut ids = Vec::new();
+        for (i, at) in [10, 40, 160].into_iter().enumerate() {
+            let id = s.execute("layer.new.layer", json!({"name": format!("Block {i}")})).unwrap()["layer"].as_u64().unwrap();
+            let (x, y) = if horizontal { (at, 10) } else { (10, at) };
+            s.execute("select.rect", json!({"x": x, "y": y, "width": 10, "height": 10})).unwrap();
+            s.execute("edit.fill", json!({"contents": "color", "color": "#336699"})).unwrap();
+            s.execute("select.deselect", json!({})).unwrap();
+            ids.push(id);
+        }
+        for (i, id) in ids.iter().copied().enumerate() {
+            s.execute("layer.select", json!({"layer": id, "mode": if i == 0 { "replace" } else { "add" }})).unwrap();
+        }
+        let mut h = harness(s, 1.0, 320.0);
+        let button = if horizontal { "Horizontally" } else { "Vertically" };
+        // An enabled Properties button invokes the existing command (not a UI-only gesture).
+        let before = {
+            let st = h.state().session.active().unwrap();
+            let b = st.doc.layer(LayerId(ids[1])).unwrap().surface().unwrap().content_bounds();
+            if horizontal { b.x0 } else { b.y0 }
+        };
+        let history = h.state().session.active().unwrap().history.entries().len();
+        h.get_by_label(button).click();
+        h.run_steps(4);
+        let after = {
+            let st = h.state().session.active().unwrap();
+            let b = st.doc.layer(LayerId(ids[1])).unwrap().surface().unwrap().content_bounds();
+            if horizontal { b.x0 } else { b.y0 }
+        };
+        assert_ne!(after, before, "{button} moved the middle layer");
+        assert_eq!(h.state().session.active().unwrap().history.entries().len(), history + 1);
+        h.state_mut().session.undo();
+        let restored = {
+            let st = h.state().session.active().unwrap();
+            let b = st.doc.layer(LayerId(ids[1])).unwrap().surface().unwrap().content_bounds();
+            if horizontal { b.x0 } else { b.y0 }
+        };
+        assert_eq!(restored, before, "{button}: undo restores its location");
     }
 }

@@ -27,7 +27,9 @@ fn flag(p: &Value, k: &str, d: bool) -> bool {
 }
 
 /// A finite number param clamped to `range`, `default` when absent; non-numbers are an error.
-fn number(p: &Value, cmd: &str, k: &str, default: f64, range: std::ops::RangeInclusive<f64>) -> Result<f64> {
+/// A numeric param clamped to `range`; missing or null gives `default`, anything else not a
+/// finite number is BadParams. Shared with the Paint Bucket and Gradient opacity.
+pub(crate) fn number(p: &Value, cmd: &str, k: &str, default: f64, range: std::ops::RangeInclusive<f64>) -> Result<f64> {
     match p.get(k) {
         None | Some(Value::Null) => Ok(default),
         Some(v) => {
@@ -57,19 +59,6 @@ fn has_pixel_layer(s: &Session) -> std::result::Result<(), String> {
 fn active_pixel_layer(s: &Session, cmd: &str) -> Result<LayerId> {
     has_pixel_layer(s).map_err(|m| bad(cmd, m))?;
     s.active().and_then(|d| d.active_layer).ok_or_else(|| bad(cmd, "no active layer"))
-}
-
-fn is_background(l: &Layer) -> bool {
-    l.name == "Background" && l.locks.transparency && l.locks.position && matches!(l.content, LayerContent::Raster(_))
-}
-
-/// Photoshop converts the Background to a normal layer before erasing to transparency.
-fn unlock_background(l: &mut Layer) {
-    if is_background(l) {
-        l.name = "Layer 0".into();
-        l.locks.transparency = false;
-        l.locks.position = false;
-    }
 }
 
 fn pixels_locked(doc: &Document, l: &Layer) -> Option<EngineError> {
@@ -114,7 +103,9 @@ fn magic_eraser(s: &mut Session, p: &Value) -> Result<Value> {
     let bg = s.tools.background;
     let dmg = s.edit("Magic Eraser", |doc, _| {
         let selection = doc.selection.clone();
-        unlock_background(doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?);
+        // Photoshop converts the Background to a normal layer before erasing to transparency.
+        doc.layer(id).ok_or(EngineError::NoLayer(id))?;
+        crate::extra_cmds::background_to_layer(doc, id);
         let lock = doc.effective_locks(id).transparency;
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
         let surf = l.surface_mut().ok_or_else(|| bad(CMD, "not a pixel layer"))?;
@@ -149,15 +140,15 @@ fn background_eraser(s: &mut Session, p: &Value) -> Result<Value> {
         if let Some(e) = pixels_locked(&d.doc, l) {
             return Err(e);
         }
-        if d.doc.effective_locks(id).transparency && !is_background(l) {
+        if d.doc.effective_locks(id).transparency && !d.doc.is_background(id) {
             return Err(EngineError::Other(format!("Could not use the Background Eraser because the transparency of layer \"{}\" is locked", l.name)));
         }
     }
     let stroke = Stroke { brush, points: pts };
     let dmg = s.edit("Background Eraser", |doc, _| {
         let selection = doc.selection.clone();
+        crate::extra_cmds::background_to_layer(doc, id);
         let l = doc.layer_mut(id).ok_or(EngineError::NoLayer(id))?;
-        unlock_background(l);
         let surf = l.surface_mut().ok_or_else(|| bad(CMD, "not a pixel layer"))?;
         Ok(apply_background_eraser(surf, &stroke, &bs, selection.as_ref()))
     })?;

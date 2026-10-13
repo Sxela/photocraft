@@ -16,7 +16,12 @@
 //!   highlight clipping, demosaicing, camera → XYZ → ProPhoto, exposure and
 //!   orientation.
 //! * [`embedded_preview`] finds the camera's full-size JPEG preview, for
-//!   formats whose sensor data is not decoded yet.
+//!   formats whose sensor data is not decoded yet; [`embedded_previews`] lists
+//!   every preview.
+//! * [`fit_look`] fits a per-file colour matrix and tone curve ([`CameraLook`])
+//!   to the camera's own (decoded) JPEG, for files without colour calibration
+//!   (method after LightCraft's `docs/camera-preview-colour.md`,
+//!   storytold/lightcraft#165); pass it in [`DevelopOptions::camera_look`].
 //! * Raws that carry no colour description (NEF) take a camera profile we
 //!   measured from the camera's own output when there is one (`cameras.rs`:
 //!   image area, levels, ForwardMatrix, tone curve; the Nikon D4 so far).
@@ -41,12 +46,14 @@
 mod cameras;
 mod color;
 mod cr2;
+mod cr3;
 mod demosaic;
 mod develop;
 mod dng;
 mod error;
 mod jxl;
 mod ljpeg;
+mod look;
 mod nefc;
 mod opcodes;
 mod orf;
@@ -54,10 +61,12 @@ mod par;
 mod preview;
 mod raf;
 mod rw2;
+mod saturation;
 mod sensor;
 mod sony;
 mod tiff;
 mod tiffep;
+mod tone;
 
 #[cfg(feature = "testgen")]
 pub mod testgen;
@@ -66,14 +75,27 @@ pub use crate::color::{Calibration, ColorInfo, Mat3};
 pub use crate::demosaic::Demosaic;
 pub use crate::develop::{DevelopOptions, Developed, RawInfo, WhiteBalance, develop_sensor};
 pub use crate::error::RawError;
+pub use crate::look::{CameraLook, LookRejected, PROXY_EDGE, Reference, ToneCurve, fit_look};
 pub use crate::opcodes::GainMap;
-pub use crate::preview::{Preview, embedded_preview};
+pub use crate::preview::{Preview, PreviewColorSpace, embedded_preview, embedded_preview_color_space, embedded_previews};
 pub use crate::sensor::{BlackLevels, Cfa, Rect, Sensor};
+pub use crate::tone::{Tone, retone};
 
 use crate::tiff::{Tiff, tag};
 
 /// Name of the output colour space of [`develop`].
 pub const OUTPUT_SPACE: &str = "ProPhoto RGB (ROMM primaries, D50, gamma 1.8)";
+
+/// The raw container's orientation, when recorded (CR3 metadata or TIFF IFD0).
+/// Useful for camera JPEGs that carry no orientation of their own.
+pub fn orientation(bytes: &[u8]) -> Option<u16> {
+    if bytes.get(4..12) == Some(b"ftypcrx ") {
+        return cr3::orientation(bytes);
+    }
+    let tiff = Tiff::new(bytes)?;
+    let ifd = tiff.ifd_at(tiff.first_ifd, 0)?;
+    tiff.tag_uint(&ifd, tag::ORIENTATION).filter(|o| (1..=8).contains(o)).map(|o| o as u16)
+}
 
 /// Camera raw container families.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -221,7 +243,7 @@ pub fn decode(bytes: &[u8], limits: &Limits) -> Result<Sensor, RawError> {
         _ => {
             let t = Tiff::new(bytes).ok_or(RawError::NotRaw)?;
             match format {
-                RawFormat::Dng => dng::decode(&t, limits),
+                RawFormat::Dng => dng::decode(&t, limits).map(lift_clipped),
                 RawFormat::Cr2 => cr2::decode(&t, limits),
                 RawFormat::Rw2 => rw2::decode(&t, limits),
                 RawFormat::Orf => orf::decode(&t, limits),
@@ -229,6 +251,13 @@ pub fn decode(bytes: &[u8], limits: &Limits) -> Result<Sensor, RawError> {
             }
         }
     }
+}
+
+/// DNG writers can state a white level the sensor never reaches; samples stuck at the real saturation
+/// point are raised to it so they clip together (see `saturation.rs`).
+fn lift_clipped(mut s: Sensor) -> Sensor {
+    s.lift_clipped_samples();
+    s
 }
 
 /// Decodes a lossless JPEG (T.81 process 14) stream into `(width, height,

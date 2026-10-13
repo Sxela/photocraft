@@ -43,6 +43,7 @@
 pub mod abr;
 pub mod aco;
 pub mod ase;
+pub mod atn;
 pub mod blend;
 pub mod builder;
 pub mod compression;
@@ -61,6 +62,7 @@ pub mod path;
 pub mod patterns;
 pub mod pixels;
 pub mod resources;
+pub mod shc;
 pub mod slices;
 pub mod tagged;
 #[cfg(any(test, feature = "testgen"))]

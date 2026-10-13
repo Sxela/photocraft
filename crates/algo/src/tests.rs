@@ -367,6 +367,30 @@ fn stylize_basics() {
     assert!((d[0] - d[1]).abs() < 1e-6 && (d[1] - d[2]).abs() < 1e-6);
 }
 
+/// CMYK samples are ink (1 = full ink): Find Edges leaves flat areas white (no ink, not 100% ink)
+/// and Solarize inverts the channels below 50% ink, as Photoshop does (#4222). Alpha is untouched.
+#[test]
+fn find_edges_and_solarize_treat_cmyk_as_ink() {
+    for depth in [SampleType::U8, SampleType::U16, SampleType::F32] {
+        let f = PixelFormat::new(ColorMode::Cmyk, depth, true);
+        let mut s = Surface::new(f);
+        s.fill_rect(R, &[0.1, 0.1, 0.1, 0.1, 1.0]);
+        let e = run(&s, &FilterParams::FindEdges).pixel(20, 15);
+        assert!(e[..4].iter().all(|v| v.abs() < 1e-6) && (e[4] - 1.0).abs() < 1e-6, "{depth:?} flat CMYK -> white: {e:?}");
+        let mut s = Surface::new(f);
+        s.fill_rect(R, &[0.1, 0.2, 0.8, 0.9, 0.6]);
+        let so = run(&s, &FilterParams::Solarize).pixel(3, 3);
+        let want = [0.9, 0.8, 0.8, 0.9, 0.6];
+        assert!(so.iter().zip(want).all(|(a, b)| (a - b).abs() < 0.01), "{depth:?} solarize CMYK: {so:?}");
+    }
+    // RGB keeps the light-polarity behaviour: flat -> white, channels above 50% invert.
+    let s = flat(SampleType::U8, R, [0.1, 0.2, 0.8, 1.0]);
+    let e = run(&s, &FilterParams::FindEdges).pixel(20, 15);
+    assert!(e[..3].iter().all(|v| (v - 1.0).abs() < 1e-6), "{e:?}");
+    let so = run(&s, &FilterParams::Solarize).pixel(3, 3);
+    assert!(so.iter().zip([0.1, 0.2, 0.2, 1.0]).all(|(a, b)| (a - b).abs() < 0.01), "{so:?}");
+}
+
 #[test]
 fn distortions_are_identity_at_zero() {
     let s = pattern(SampleType::U8, R);

@@ -220,6 +220,61 @@ fn section_locks_round_trip_and_survive_preset_picks() {
     assert_eq!(b.tip, chalk.tip);
 }
 
+#[test]
+fn section_locks_are_always_visible_and_toggle_on_click() {
+    use egui_kittest::kittest::Queryable;
+
+    fn collect_icon_rects(shape: &egui::Shape, out: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Rect(r) if (r.rect.size() - vec2(12.0, 12.0)).length() < 0.5 => out.push(r.rect),
+            egui::Shape::Mesh(mesh) => out.push(mesh.calc_bounds()),
+            egui::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_icon_rects(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut h = harness(0, 0);
+    let mut icons = Vec::new();
+    for clipped in &h.output().shapes {
+        collect_icon_rects(&clipped.shape, &mut icons);
+    }
+
+    // Every lockable section (1..SECTIONS.len()) paints its lock icon even when unlocked and unhovered.
+    for (name, _) in SECTIONS.iter().skip(1) {
+        let row = h.get_by_label(name).rect();
+        let lock_center = egui::pos2(row.right() - 11.0, row.center().y);
+        assert!(icons.iter().any(|r| r.contains(lock_center)), "expected lock icon at {lock_center:?} for {name}");
+    }
+
+    // Clicking the lock toggles it on and off without changing the selected section.
+    let row = h.get_by_label("Scattering").rect();
+    let lock_pos = egui::pos2(row.right() - 11.0, row.center().y);
+    assert!(!h.state().session.tools.brush.locks.scattering);
+    assert_eq!(h.state().ui.brush_section, 0);
+
+    h.hover_at(lock_pos);
+    h.run_steps(1);
+    h.drag_at(lock_pos);
+    h.run_steps(1);
+    h.drop_at(lock_pos);
+    h.run_steps(2);
+    assert!(h.state().session.tools.brush.locks.scattering);
+    assert_eq!(h.state().ui.brush_section, 0);
+
+    h.hover_at(lock_pos);
+    h.run_steps(1);
+    h.drag_at(lock_pos);
+    h.run_steps(1);
+    h.drop_at(lock_pos);
+    h.run_steps(2);
+    assert!(!h.state().session.tools.brush.locks.scattering);
+    assert_eq!(h.state().ui.brush_section, 0);
+}
+
 /// A harness that shows the options bar with `tool` in the Studio (non-pro) theme.
 fn options_bar_harness(tool: crate::state::Tool) -> Harness<'static, PhotocraftApp> {
     let mut app = app();
@@ -465,6 +520,165 @@ fn harness(tab: usize, section: usize) -> Harness<'static, PhotocraftApp> {
     h
 }
 
+fn toggle_value(app: &PhotocraftApp, section: usize) -> bool {
+    let brush = serde_json::to_value(&app.session.tools.brush).unwrap();
+    let path = match section {
+        8 => "/noise",
+        9 => "/wetEdges",
+        10 => "/buildUp",
+        11 => "/smoothing/enabled",
+        12 => "/protectTexture",
+        _ => panic!("not a checkbox-only row"),
+    };
+    brush.pointer(path).and_then(Value::as_bool).expect("the checkbox has a boolean brush setting")
+}
+
+#[test]
+fn checkbox_only_rows_toggle_without_changing_the_selected_controls() {
+    use egui_kittest::kittest::Queryable;
+    for (section, &(name, _)) in SECTIONS.iter().enumerate().skip(8) {
+        let mut h = harness(0, 1);
+        let before = toggle_value(h.state(), section);
+        let n = h.state().session.journal.len();
+        h.get_by_label(name).click();
+        h.run_steps(3);
+        assert_eq!(h.state().ui.brush_section, 1, "{name} must leave Shape Dynamics open");
+        assert_eq!(toggle_value(h.state(), section), !before, "{name}");
+        assert_eq!(h.state().session.journal.len(), n + 1, "one command for {name}");
+        assert_eq!(last_journal(h.state()).unwrap().0, "tools.setBrush");
+        h.get_by_label(name).click();
+        h.run_steps(3);
+        assert_eq!(toggle_value(h.state(), section), before, "a second row click turns {name} back");
+        assert_eq!(h.state().ui.brush_section, 1);
+        assert_eq!(h.state().session.journal.len(), n + 2);
+    }
+}
+
+#[test]
+fn checkbox_only_box_and_lock_clicks_do_not_select_or_double_toggle() {
+    use egui_kittest::kittest::Queryable;
+    for (section, &(name, _)) in SECTIONS.iter().enumerate().skip(8) {
+        let mut h = harness(0, 1);
+        let rect = h.get_by_label(name).rect();
+        let before = toggle_value(h.state(), section);
+        let n = h.state().session.journal.len();
+        let at = egui::pos2(rect.left() + 12.0, rect.center().y);
+        h.hover_at(at);
+        h.run_steps(2);
+        h.drag_at(at);
+        h.run_steps(2);
+        h.drop_at(at);
+        h.run_steps(3);
+        assert_eq!(toggle_value(h.state(), section), !before, "checkbox click on {name}");
+        assert_eq!(h.state().ui.brush_section, 1);
+        assert_eq!(h.state().session.journal.len(), n + 1);
+        let at = egui::pos2(rect.right() - 11.0, rect.center().y);
+        h.hover_at(at);
+        h.run_steps(2);
+        h.drag_at(at);
+        h.run_steps(2);
+        h.drop_at(at);
+        h.run_steps(3);
+        assert_eq!(toggle_value(h.state(), section), !before, "lock click must not toggle {name}");
+        assert_eq!(h.state().ui.brush_section, 1);
+        assert_eq!(h.state().session.journal.len(), n + 2);
+        let mut brush = h.state().session.tools.brush.clone();
+        assert!(*section_lock(&mut brush, section).unwrap(), "{name} lock");
+    }
+}
+
+#[test]
+fn checkbox_only_rows_cannot_restore_an_empty_properties_pane() {
+    for (section, &(name, _)) in SECTIONS.iter().enumerate().skip(8) {
+        let h = harness(0, section);
+        assert_eq!(h.state().ui.brush_section, 0, "an old selection of {name} returns to Brush Tip Shape");
+    }
+}
+
+#[test]
+fn smoothing_row_preserves_its_amount_and_options_across_toggles() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness(0, 1);
+    h.state_mut().run("tools.setBrush", json!({"brush": {"smoothing": {"amount": 0.65, "pulledString": true, "catchUpOnEnd": false}}})).unwrap();
+    let before = h.state().session.tools.brush.smoothing.clone();
+    h.run_steps(2);
+    for enabled in [false, true] {
+        h.get_by_label("Smoothing").click();
+        h.run_steps(3);
+        let mut expected = before.clone();
+        expected.enabled = enabled;
+        assert_eq!(h.state().session.tools.brush.smoothing, expected);
+        assert_eq!(h.state().ui.brush_section, 1);
+        assert_eq!(last_journal(h.state()).unwrap().1["brush"], json!({"smoothing": {"enabled": enabled}}));
+    }
+}
+
+#[test]
+fn checkbox_only_rows_are_accessible_checkboxes_and_accept_space() {
+    use egui::accesskit::Role;
+    use egui_kittest::kittest::{NodeT, Queryable};
+    let mut h = harness(0, 1);
+    for (section, &(name, _)) in SECTIONS.iter().enumerate().skip(8) {
+        let node = h.get_by_label(name);
+        assert_eq!(node.accesskit_node().role(), Role::CheckBox, "{name}");
+        node.focus();
+        h.run_steps(2);
+        let before = toggle_value(h.state(), section);
+        h.key_press(egui::Key::Space);
+        h.run_steps(3);
+        assert_eq!(toggle_value(h.state(), section), !before, "Space toggles {name}");
+        assert_eq!(h.state().ui.brush_section, 1);
+    }
+}
+
+#[test]
+fn editing_the_options_bar_amount_reenables_smoothing() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = options_bar_harness(crate::state::Tool::Brush);
+    h.state_mut().run("tools.setBrush", json!({"brush": {"smoothing": {"enabled": false, "amount": 0.4}}})).unwrap();
+    h.run_steps(3);
+    let n = h.state().session.journal.len();
+    let label = h.get_by_label("Smoothing").rect();
+    let at = egui::pos2(label.right() + 25.0, label.center().y);
+    h.hover_at(at);
+    h.run_steps(2);
+    h.drag_at(at);
+    h.run_steps(2);
+    h.hover_at(at + vec2(20.0, 0.0));
+    h.run_steps(2);
+    h.drop_at(at + vec2(20.0, 0.0));
+    h.run_steps(3);
+    let smoothing = &h.state().session.tools.brush.smoothing;
+    assert!(smoothing.enabled && smoothing.amount != 0.4);
+    assert_eq!(h.state().session.journal.len(), n + 1, "one options-bar gesture");
+    assert_eq!(last_journal(h.state()).unwrap().1["brush"]["smoothing"]["enabled"], true);
+}
+
+/// #4282: every name in the section list starts in the same column, Brush Tip Shape included,
+/// whether or not its row has an enable box (Photoshop indents the rows without one).
+#[test]
+fn section_names_line_up_whether_or_not_they_have_a_box() {
+    fn text_x(shape: &egui::Shape, out: &mut Vec<(String, f32)>) {
+        match shape {
+            egui::Shape::Text(text) => out.push((text.galley.job.text.clone(), text.pos.x)),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| text_x(s, out)),
+            _ => {}
+        }
+    }
+    // Shape Dynamics is shown, so its heading paints too; the list's copy is the leftmost.
+    let h = harness(0, 1);
+    let mut painted = Vec::new();
+    for shape in &h.output().shapes {
+        text_x(&shape.shape, &mut painted);
+    }
+    let left = |name: &str| painted.iter().filter(|(t, _)| t == name).map(|(_, x)| *x).reduce(f32::min);
+    let columns: Vec<(&str, f32)> = SECTIONS.iter().map(|(name, _)| (*name, left(name).unwrap_or_else(|| panic!("{name} painted")))).collect();
+    let (_, boxed) = columns[1];
+    for (name, x) in &columns {
+        assert!((x - boxed).abs() < 0.5, "{name} starts at {x}, the boxed names at {boxed}: {columns:?}");
+    }
+}
+
 #[test]
 fn preview_strip_re_renders_only_when_the_brush_changes() {
     let mut h = harness(0, 0);
@@ -635,6 +849,90 @@ fn folder_actions_become_folder_commands() {
     assert_eq!(last_journal(&app).unwrap(), ("brush.presets.moveGroup".to_string(), json!({ "group": "Kit", "folder": ["Dry"], "before": "Inks" })));
 }
 
+/// Dragging a folder or group header onto another header (#2014): the upper edge places it
+/// before, the rest puts it inside; the action runs `brush.presets.moveGroup` with `into`.
+#[test]
+fn folder_drops_map_to_move_commands() {
+    use crate::brushes_tab::{Action, apply, folder_drop};
+    let v = |p: &[&str]| p.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+    // Into: a folder onto another folder, a group onto a group.
+    assert_eq!(
+        folder_drop("Kit", &v(&["Dry"]), "Kit", &v(&["Inks"]), false),
+        Some(Action::MoveInto { group: "Kit".into(), folder: v(&["Dry"]), into: Some(("Kit".into(), v(&["Inks"]))), before: None })
+    );
+    assert_eq!(
+        folder_drop("Pack", &[], "Kit", &v(&["Inks"]), false),
+        Some(Action::MoveInto { group: "Pack".into(), folder: vec![], into: Some(("Kit".into(), v(&["Inks"]))), before: None })
+    );
+    // Onto itself, into its own folder, or into the folder it is already in: nothing.
+    assert_eq!(folder_drop("Kit", &v(&["Inks"]), "Kit", &v(&["Inks"]), false), None);
+    assert_eq!(folder_drop("Kit", &v(&["Inks"]), "Kit", &v(&["Inks", "Fine"]), true), None);
+    assert_eq!(folder_drop("Kit", &[], "Kit", &v(&["Inks"]), false), None);
+    assert_eq!(folder_drop("Kit", &v(&["Inks", "Fine"]), "Kit", &v(&["Inks"]), false), None);
+    // Upper edge: siblings reorder; a nested folder before a group goes to the top level; a
+    // folder before a folder elsewhere moves next to it.
+    assert_eq!(
+        folder_drop("Kit", &v(&["Dry"]), "Kit", &v(&["Inks"]), true),
+        Some(Action::MoveGroup { group: "Kit".into(), folder: v(&["Dry"]), before: Some("Inks".into()) })
+    );
+    assert_eq!(folder_drop("Pack", &[], "Kit", &[], true), Some(Action::MoveGroup { group: "Pack".into(), folder: vec![], before: Some("Kit".into()) }));
+    assert_eq!(
+        folder_drop("Kit", &v(&["Inks", "Fine"]), "Pack", &[], true),
+        Some(Action::MoveInto { group: "Kit".into(), folder: v(&["Inks", "Fine"]), into: None, before: Some("Pack".into()) })
+    );
+    assert_eq!(
+        folder_drop("Kit", &v(&["Inks", "Fine"]), "Pack", &v(&["Box"]), true),
+        Some(Action::MoveInto { group: "Kit".into(), folder: v(&["Inks", "Fine"]), into: Some(("Pack".into(), vec![])), before: Some("Box".into()) })
+    );
+
+    let mut app = app();
+    for p in [kit("Kit Pen", &["Inks"]), kit("Kit Nib", &["Inks", "Fine"]), kit("Kit Chalk", &["Dry"])] {
+        app.session.tools.presets.push(p);
+    }
+    let into = folder_drop("Kit", &v(&["Dry"]), "Kit", &v(&["Inks", "Fine"]), false).unwrap();
+    apply(&mut app, vec![into]);
+    assert_eq!(paint::presets::find(&app.session.tools.presets, "Kit Chalk").unwrap().folder, ["Inks", "Fine", "Dry"]);
+    assert_eq!(
+        last_journal(&app).unwrap(),
+        ("brush.presets.moveGroup".to_string(), json!({ "group": "Kit", "folder": ["Dry"], "into": {"group": "Kit", "folder": ["Inks", "Fine"]} }))
+    );
+    // Out to the top level, before a group.
+    let out = folder_drop("Kit", &v(&["Inks", "Fine"]), "Kit", &[], true).unwrap();
+    apply(&mut app, vec![out]);
+    let chalk = paint::presets::find(&app.session.tools.presets, "Kit Chalk").unwrap();
+    assert_eq!((chalk.group.as_str(), chalk.folder.clone()), ("Fine", v(&["Dry"])));
+    let order = photocraft_engine::brush_preset_cmds::group_order(&app.session.tools.presets);
+    assert!(order.iter().position(|g| g == "Fine") < order.iter().position(|g| g == "Kit"));
+}
+
+/// A folder header dragged onto another folder's header in the Brushes panel goes inside it.
+#[test]
+fn dragging_a_folder_header_onto_another_moves_it_inside() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness(1, 0);
+    let builtin_groups: Vec<String> = grouped_presets(&h.state().session.tools.presets).into_iter().map(|(g, _)| g).collect();
+    h.state_mut().ui.brushes_panel.collapsed = builtin_groups;
+    for p in [kit("Kit Pen", &["Test Inks"]), kit("Kit Chalk", &["Test Dry"])] {
+        h.state_mut().session.tools.presets.push(p);
+    }
+    h.run_steps(3);
+    let from = h.get_by_label("Test Dry").rect().center();
+    let to = h.get_by_label("Test Inks").rect();
+    let to = egui::pos2(to.center().x, to.top() + to.height() * 0.7);
+    h.hover_at(from);
+    h.run();
+    h.drag_at(from);
+    h.run();
+    for k in 1..=6 {
+        h.hover_at(from + (to - from) * (k as f32 / 6.0));
+        h.run();
+    }
+    h.drop_at(to);
+    h.run_steps(3);
+    assert_eq!(paint::presets::find(&h.state().session.tools.presets, "Kit Chalk").unwrap().folder, ["Test Inks", "Test Dry"]);
+    assert_eq!(last_journal(h.state()).unwrap().0, "brush.presets.moveGroup");
+}
+
 /// A fresh session with the Brush tool: shortcuts, the options bar and the Brush Settings window,
 /// in the default theme (#258).
 fn app_harness() -> Harness<'static, PhotocraftApp> {
@@ -801,6 +1099,9 @@ fn options_bar_reaches_brush_settings_and_the_preset_library() {
     }
     let target = presets.iter().find(|p| p.group == "Dry Media").or(presets.last()).unwrap().name.clone();
     assert_ne!(h.state().session.tools.current_preset.as_deref(), Some(target.as_str()));
+    // The picker's cards are tall: scroll the target into the list before clicking it.
+    h.get_by_label(&target).scroll_to_me();
+    h.run_steps(3);
     h.get_by_label(&target).click();
     h.run_steps(3);
     assert_eq!(last_journal(h.state()).unwrap(), ("tools.setBrush".to_string(), json!({ "preset": target })));
@@ -873,4 +1174,106 @@ fn hand_tool_offers_scale_buttons_and_requests_the_right_view() {
     h.run_steps(1);
     assert!(h.state().ui.views[0].fill_pending);
     assert!(!h.state().ui.views[0].fit_pending);
+}
+
+#[test]
+fn brush_settings_hamburger_menu_actions() {
+    use egui_kittest::kittest::Queryable;
+
+    // 1. Menu opens and offers Photoshop actions
+    let mut h = harness(0, 0);
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+
+    assert!(h.query_all_by_label("New Brush Preset…").count() > 0);
+    assert!(h.query_all_by_label("Clear Brush Controls").count() > 0);
+    assert!(h.query_all_by_label("Reset All Locked Settings").count() > 0);
+    assert!(h.query_all_by_label("Copy Texture to Other Tools").count() > 0);
+    assert!(h.query_all_by_label("Close").count() > 0);
+    assert!(h.query_all_by_label("Close Tab Group").count() > 0);
+
+    // 2. New Brush Preset… saves a preset
+    let count0 = h.state().session.tools.presets.len();
+    h.get_by_label("New Brush Preset…").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.tools.presets.len(), count0 + 1);
+    assert_eq!(last_journal(h.state()).unwrap().0, "brush.presets.save");
+
+    // 3. Clear Brush Controls resets dynamics, keeps locked sections and smoothing
+    let mut h = harness(0, 0);
+    h.state_mut().session.tools.brush.size = 45.0;
+    h.state_mut().session.tools.brush.scattering.enabled = true;
+    h.state_mut().session.tools.brush.texture.enabled = true;
+    h.state_mut().session.tools.brush.locks.texture = true;
+    h.state_mut().session.tools.brush.smoothing.amount = 0.5;
+    h.run_steps(1);
+
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+    h.get_by_label("Clear Brush Controls").click();
+    h.run_steps(2);
+
+    let b = &h.state().session.tools.brush;
+    assert!(!b.scattering.enabled, "unlocked scattering cleared");
+    assert!(b.texture.enabled, "locked texture preserved");
+    assert_eq!(b.smoothing.amount, 0.5, "smoothing preserved");
+    assert_eq!(b.size, 45.0, "tip size preserved");
+
+    // 4. Reset All Locked Settings clears all locks
+    assert!(b.locks.texture);
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+    h.get_by_label("Reset All Locked Settings").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.tools.brush.locks, photocraft_paint::brush::SectionLocks::default());
+
+    // 5. Copy Texture to Other Tools copies texture to other tools with texture enabled
+    let mut h = harness(0, 0);
+    h.state_mut().session.tools.brush.texture.enabled = true;
+    h.state_mut().session.tools.brush.texture.scale = 2.5;
+    let mut pencil_brush = BrushSettings::default();
+    pencil_brush.texture.enabled = true;
+    pencil_brush.texture.scale = 1.0;
+    h.state_mut().ui.tool_brushes = vec![(crate::state::Tool::Pencil, pencil_brush)];
+    h.run_steps(1);
+
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+    h.get_by_label("Copy Texture to Other Tools").click();
+    h.run_steps(2);
+
+    let pencil = h.state().ui.tool_brushes.iter().find(|(t, _)| *t == crate::state::Tool::Pencil).unwrap();
+    assert_eq!(pencil.1.texture.scale, 2.5);
+
+    // 6. Close closes the window
+    let mut h = harness(0, 0);
+    assert!(h.state().ui.panels.brush_settings);
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+    let close_buttons: Vec<_> = h.query_all_by_label("Close").collect();
+    assert!(close_buttons.len() >= 2);
+    close_buttons.last().unwrap().click();
+    h.run_steps(2);
+    assert!(!h.state().ui.panels.brush_settings);
+
+    // 7. Close Tab Group closes the window
+    let mut h = harness(0, 0);
+    assert!(h.state().ui.panels.brush_settings);
+    h.get_by_label("Panel menu").click();
+    h.run_steps(2);
+    h.get_by_label("Close Tab Group").click();
+    h.run_steps(2);
+    assert!(!h.state().ui.panels.brush_settings);
+}
+
+#[test]
+fn brushes_button_at_top_of_brush_settings_opens_brushes_panel() {
+    use egui_kittest::kittest::Queryable;
+
+    let mut h = harness(0, 0);
+    assert_eq!(h.state().ui.brush_tab, 0);
+    h.get_by_label("Brushes").click();
+    h.run_steps(3);
+    assert!(h.state().ui.panels.brush_settings);
+    assert_eq!(h.state().ui.brush_tab, 1);
 }

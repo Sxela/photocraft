@@ -478,6 +478,7 @@ fn type_tool_alt_arrows_kern_the_pair() {
         anchor: 1,
         session: "kern-test".into(),
         created: false,
+        mask: false,
         dragging: false,
         resize: None,
         preedit: None,
@@ -503,10 +504,12 @@ fn type_tool_alt_arrows_kern_the_pair() {
     h.key_press_modifiers(Modifiers::ALT | Modifiers::SHIFT, Key::ArrowRight);
     h.run_steps(2);
     assert_eq!(h.state().ui.text_edit.as_ref().map(|e| (e.anchor, e.caret)), Some((3, 6)));
-    // With a selection Alt+→ moves by word instead of kerning; at the text end there's no pair.
+    // With a selection Alt+→ tracks it instead (see `type_tool_format_keys_*`); at the text end
+    // there's no pair to kern.
     let before = kern(&h);
-    h.key_press_modifiers(Modifiers::ALT, Key::ArrowRight);
+    h.key_press(Key::ArrowRight);
     h.run_steps(2);
+    assert_eq!(h.state().ui.text_edit.as_ref().map(|e| (e.anchor, e.caret)), Some((6, 6)));
     h.key_press_modifiers(Modifiers::ALT, Key::ArrowRight);
     h.run_steps(2);
     assert_eq!(kern(&h), before);
@@ -515,6 +518,245 @@ fn type_tool_alt_arrows_kern_the_pair() {
     assert!(h.state_mut().session.undo());
     h.run_steps(1);
     assert_eq!(kern(&h).1, metric + 120.0);
+}
+
+/// Starts a type editing session on `layer` with `anchor..caret` selected.
+fn edit_type(h: &mut Harness<'static, PhotocraftApp>, layer: u64, anchor: usize, caret: usize) {
+    h.state_mut().ui.text_edit = Some(crate::state::TextEdit {
+        layer,
+        caret,
+        anchor,
+        session: "format-keys".into(),
+        created: false,
+        mask: false,
+        dragging: false,
+        resize: None,
+        preedit: None,
+    });
+    h.run_steps(2);
+}
+
+fn type_layer(h: &Harness<'static, PhotocraftApp>, id: u64) -> photocraft_doc::TextLayer {
+    match &h.state().session.active().unwrap().doc.layer(photocraft_doc::LayerId(id)).unwrap().content {
+        photocraft_doc::LayerContent::Text(t) => t.clone(),
+        _ => panic!("not text"),
+    }
+}
+
+/// The character style of character `c` of a type layer.
+fn char_style(h: &Harness<'static, PhotocraftApp>, id: u64, c: usize) -> photocraft_doc::text::CharStyle {
+    let t = type_layer(h, id);
+    let byte = t.text.char_indices().nth(c).map_or(t.text.len(), |(i, _)| i);
+    let mut end = 0;
+    t.char_runs()
+        .into_iter()
+        .find(|r| {
+            end += r.len;
+            end > byte || t.text.is_empty()
+        })
+        .unwrap()
+        .style
+}
+
+/// The paragraph style of the paragraph holding character `c`.
+fn para_style(h: &Harness<'static, PhotocraftApp>, id: u64, c: usize) -> photocraft_doc::text::ParagraphStyle {
+    let t = type_layer(h, id);
+    let byte = t.text.char_indices().nth(c).map_or(t.text.len(), |(i, _)| i);
+    let mut end = 0;
+    t.paragraph_runs()
+        .into_iter()
+        .find(|r| {
+            end += r.len;
+            end > byte
+        })
+        .unwrap()
+        .style
+}
+
+fn history(h: &Harness<'static, PhotocraftApp>) -> Vec<String> {
+    h.state().session.active().unwrap().history.entries()
+}
+
+/// Photoshop's ⇧⌘K/U/B/I/: toggle All Caps, Underline, Faux Bold, Faux Italic and Strikethrough
+/// on the selected characters while typing, one step per press, and never reach the global
+/// ⇧⌘K/U/B/I (Color Settings, Desaturate, Auto Color, Inverse).
+#[test]
+fn type_tool_format_keys_toggle_character_styles() {
+    use photocraft_doc::text::{Caps, CharStyle};
+    let mut h = harness();
+    // A selection, so Select ▸ Inverse would be enabled if the key reached it.
+    h.state_mut().run("select.all", json!({})).unwrap();
+    let id = h.state_mut().run("type.create", json!({"x": 20, "y": 80, "text": "Hello world", "size": 20})).unwrap()["layer"].as_u64().unwrap();
+    edit_type(&mut h, id, 0, 5);
+    let cmd_shift = Modifiers::COMMAND | Modifiers::SHIFT;
+    type Has = fn(&CharStyle) -> bool;
+    let keys: [(Key, Has); 6] = [
+        (Key::K, |s| s.caps == Caps::AllCaps),
+        (Key::U, |s| s.underline),
+        (Key::B, |s| s.faux_bold),
+        (Key::I, |s| s.faux_italic),
+        (Key::Slash, |s| s.strikethrough),
+        (Key::Questionmark, |s| s.strikethrough),
+    ];
+    for (key, has) in keys {
+        let before = history(&h).len();
+        let was = has(&char_style(&h, id, 0));
+        h.key_press_modifiers(cmd_shift, key);
+        h.run_steps(2);
+        assert_eq!(has(&char_style(&h, id, 0)), !was, "{key:?} toggles the selection");
+        assert_eq!(has(&char_style(&h, id, 4)), !was, "{key:?}");
+        assert!(!has(&char_style(&h, id, 6)), "{key:?} leaves the unselected characters");
+        let steps = history(&h);
+        assert_eq!(steps.len(), before + 1, "{key:?}: one history step");
+        assert_eq!(steps.last().map(String::as_str), Some("Set Type Style"), "{key:?}");
+        assert!(h.state().ui.dialogs.is_empty(), "{key:?} must not open Color Settings");
+        assert!(h.state().ui.text_edit.is_some());
+    }
+    // The second strikethrough key turned it off again; press the rest again: all off.
+    for key in [Key::K, Key::U, Key::B, Key::I] {
+        h.key_press_modifiers(cmd_shift, key);
+        h.run_steps(2);
+    }
+    let s = char_style(&h, id, 2);
+    assert!(s.caps == Caps::Normal && !s.underline && !s.faux_bold && !s.faux_italic && !s.strikethrough);
+    // Partly underlined: the key underlines the whole selection rather than flipping each part.
+    h.state_mut().run("type.setStyle", json!({"layer": id, "range": [0, 2], "underline": true})).unwrap();
+    h.key_press_modifiers(cmd_shift, Key::U);
+    h.run_steps(2);
+    assert!((0..5).all(|c| char_style(&h, id, c).underline));
+    // Undo takes back one press.
+    assert!(h.state_mut().session.undo());
+    h.run_steps(1);
+    assert!(char_style(&h, id, 0).underline && !char_style(&h, id, 3).underline);
+    // A collapsed caret in non-empty text: nothing changes, and nothing global runs.
+    edit_type(&mut h, id, 3, 3);
+    let before = history(&h);
+    for key in [Key::K, Key::U, Key::B, Key::I] {
+        h.key_press_modifiers(cmd_shift, key);
+        h.run_steps(2);
+    }
+    assert_eq!(history(&h), before);
+    assert!(h.state().ui.dialogs.is_empty());
+    // Empty text: the key sets the style the next characters typed get.
+    let empty = h.state_mut().run("type.create", json!({"x": 20, "y": 160, "text": "", "size": 20})).unwrap()["layer"].as_u64().unwrap();
+    edit_type(&mut h, empty, 0, 0);
+    h.key_press_modifiers(cmd_shift, Key::B);
+    h.run_steps(2);
+    h.event(egui::Event::Text("ab".into()));
+    h.run_steps(2);
+    assert_eq!(type_layer(&h, empty).text, "ab");
+    assert!(char_style(&h, empty, 0).faux_bold && char_style(&h, empty, 1).faux_bold);
+}
+
+/// Outside text editing ⇧⌘K and ⇧⌘I keep their global meanings.
+#[test]
+fn global_cmd_shift_keys_still_work_outside_type_editing() {
+    let mut h = harness();
+    h.state_mut().run("select.all", json!({})).unwrap();
+    let id = h.state_mut().run("type.create", json!({"x": 20, "y": 80, "text": "Hello", "size": 20})).unwrap()["layer"].as_u64().unwrap();
+    h.run_steps(2);
+    assert!(h.state().ui.text_edit.is_none());
+    let cmd_shift = Modifiers::COMMAND | Modifiers::SHIFT;
+    h.key_press_modifiers(cmd_shift, Key::I);
+    h.run_steps(2);
+    assert_eq!(history(&h).last().map(String::as_str), Some("Inverse"));
+    h.key_press_modifiers(cmd_shift, Key::K);
+    h.run_steps(3);
+    assert_eq!(h.state().ui.dialogs.len(), 1, "Color Settings opens");
+    assert!(!char_style(&h, id, 0).faux_italic && char_style(&h, id, 0).caps == photocraft_doc::text::Caps::Normal);
+}
+
+/// ⌥↑/↓ leading (2 pt, 10 with ⌘), ⇧⌥↑/↓ baseline shift and ⌥←/→ tracking over a selection
+/// (20, 100 with ⌘): one step per press, from each character's own value, the selection kept.
+#[test]
+fn type_tool_format_keys_step_leading_baseline_and_tracking() {
+    let mut h = harness();
+    let id = h.state_mut().run("type.create", json!({"x": 20, "y": 80, "text": "Hello world", "size": 10})).unwrap()["layer"].as_u64().unwrap();
+    edit_type(&mut h, id, 0, 5);
+    let before = history(&h).len();
+    let press = |h: &mut Harness<'static, PhotocraftApp>, m: Modifiers, k: Key| {
+        h.key_press_modifiers(m, k);
+        h.run_steps(2);
+    };
+    // Auto leading is 120% of 10 pt: ⌥↓ makes it 14.
+    press(&mut h, Modifiers::ALT, Key::ArrowDown);
+    assert_eq!(char_style(&h, id, 0).leading_pt, Some(14.0));
+    press(&mut h, Modifiers::ALT, Key::ArrowUp);
+    assert_eq!(char_style(&h, id, 4).leading_pt, Some(12.0));
+    press(&mut h, Modifiers::ALT | Modifiers::COMMAND, Key::ArrowDown);
+    assert_eq!(char_style(&h, id, 0).leading_pt, Some(22.0));
+    press(&mut h, Modifiers::ALT | Modifiers::SHIFT, Key::ArrowUp);
+    assert_eq!(char_style(&h, id, 0).baseline_shift_pt, 2.0);
+    press(&mut h, Modifiers::ALT | Modifiers::SHIFT | Modifiers::COMMAND, Key::ArrowDown);
+    assert_eq!(char_style(&h, id, 0).baseline_shift_pt, -8.0);
+    press(&mut h, Modifiers::ALT, Key::ArrowRight);
+    assert_eq!(char_style(&h, id, 0).tracking, 20.0);
+    press(&mut h, Modifiers::ALT | Modifiers::COMMAND, Key::ArrowLeft);
+    assert_eq!(char_style(&h, id, 4).tracking, -80.0);
+    assert_eq!(history(&h).len(), before + 7, "one history step per press");
+    assert_eq!(h.state().ui.text_edit.as_ref().map(|e| (e.anchor, e.caret)), Some((0, 5)), "the selection stays");
+    let rest = char_style(&h, id, 7);
+    assert_eq!((rest.leading_pt, rest.baseline_shift_pt, rest.tracking), (None, 0.0, 0.0));
+    // A collapsed caret: ⌥↑/↓ change nothing and don't move the caret.
+    edit_type(&mut h, id, 8, 8);
+    let steps = history(&h).len();
+    press(&mut h, Modifiers::ALT, Key::ArrowDown);
+    press(&mut h, Modifiers::ALT | Modifiers::SHIFT, Key::ArrowUp);
+    assert_eq!(history(&h).len(), steps);
+    assert_eq!(h.state().ui.text_edit.as_ref().map(|e| (e.anchor, e.caret)), Some((8, 8)));
+}
+
+/// ⌥⇧⌘H toggles Hyphenate for the paragraphs the selection or caret touches.
+#[test]
+fn type_tool_format_keys_toggle_hyphenate() {
+    let mut h = harness();
+    let id = h.state_mut().run("type.create", json!({"box": [10, 10, 300, 200], "text": "one\ntwo\nthree", "size": 12})).unwrap()["layer"].as_u64().unwrap();
+    let keys = Modifiers::COMMAND | Modifiers::ALT | Modifiers::SHIFT;
+    // The caret in the second paragraph.
+    edit_type(&mut h, id, 5, 5);
+    let before = history(&h).len();
+    h.key_press_modifiers(keys, Key::H);
+    h.run_steps(2);
+    assert_eq!([0, 5, 9].map(|c| para_style(&h, id, c).hyphenate), [false, true, false]);
+    // A selection over the first two: not all hyphenate, so both do; again, neither.
+    edit_type(&mut h, id, 1, 5);
+    h.key_press_modifiers(keys, Key::H);
+    h.run_steps(2);
+    assert_eq!([0, 5, 9].map(|c| para_style(&h, id, c).hyphenate), [true, true, false]);
+    h.key_press_modifiers(keys, Key::H);
+    h.run_steps(2);
+    assert_eq!([0, 5, 9].map(|c| para_style(&h, id, c).hyphenate), [false, false, false]);
+    assert_eq!(history(&h).len(), before + 3);
+}
+
+/// The formatting keys never panic: an edit of a layer that has gone, or with no document.
+#[test]
+fn type_tool_format_keys_survive_hostile_state() {
+    let mut h = harness();
+    edit_type(&mut h, 9999, 0, 3);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::U);
+    h.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+    h.run_steps(2);
+    assert!(h.state().ui.text_edit.is_none(), "an edit of a missing layer ends");
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+    for ed in [None, Some(1)] {
+        app.ui.text_edit = ed.map(|layer| crate::state::TextEdit {
+            layer,
+            caret: 4,
+            anchor: 0,
+            session: "x".into(),
+            created: false,
+            mask: false,
+            dragging: false,
+            resize: None,
+            preedit: None,
+        });
+        crate::type_tool::toggle_char_style(&mut app, crate::type_tool::CharToggle::AllCaps);
+        crate::type_tool::step_char_metric(&mut app, "leadingBy", 2.0);
+        crate::type_tool::step_char_metric(&mut app, "trackingBy", f32::NAN);
+        crate::type_tool::toggle_hyphenate(&mut app);
+    }
+    assert!(app.session.active().is_none());
 }
 
 /// The Character panel's kerning field reads and parses Photoshop's values.
@@ -550,17 +792,33 @@ fn eyedropper_and_alt_sampling_show_a_pipette() {
     h.event(egui::Event::ModifiersChanged(Modifiers::ALT));
     assert_eq!(cursor(&mut h), egui::CursorIcon::None, "⌥ samples with a pipette");
     h.state_mut().run("prefs.set", json!({"values": {"cursors.other": "precise"}})).unwrap();
-    // Every platform reports the crosshair. Windows also hands the OS a black-and-white bitmap
-    // for it (`tool_cursor`, #1160), with `Crosshair` underneath as the fallback.
+    // Every platform reports the crosshair. The desktop builds also hand the OS a black-and-white
+    // bitmap for it (`tool_cursor`, #1160, #1343), with `Crosshair` underneath as the fallback.
     let precise = |h: &mut Harness<'static, PhotocraftApp>| {
         let icon = cursor(h);
         (icon, h.output().platform_output.cursor_image.is_some())
     };
-    let windows = cfg!(target_os = "windows");
-    assert_eq!(precise(&mut h), (egui::CursorIcon::Crosshair, windows), "Precise keeps the crosshair");
+    let desktop = cfg!(not(target_arch = "wasm32"));
+    assert_eq!(precise(&mut h), (egui::CursorIcon::Crosshair, desktop), "Precise keeps the crosshair");
     h.event(egui::Event::ModifiersChanged(Modifiers::NONE));
     h.state_mut().ui.tool = crate::state::Tool::Eyedropper;
-    assert_eq!(precise(&mut h), (egui::CursorIcon::Crosshair, windows));
+    assert_eq!(precise(&mut h), (egui::CursorIcon::Crosshair, desktop));
+}
+
+/// The Paint Bucket shows a bucket instead of the crosshair (#3968); Precise Other Cursors keeps
+/// the crosshair.
+#[test]
+fn paint_bucket_shows_a_bucket_cursor() {
+    let mut h = harness();
+    let p = h.state().last_canvas_rect.center();
+    h.state_mut().ui.tool = crate::state::Tool::PaintBucket;
+    h.hover_at(p);
+    h.run_steps(2);
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "the bucket replaces the pointer");
+    h.state_mut().run("prefs.set", json!({"values": {"cursors.other": "precise"}})).unwrap();
+    h.hover_at(p);
+    h.run_steps(2);
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::Crosshair, "Precise keeps the crosshair");
 }
 
 /// The Hand tool, and Space held over another tool, show an open hand while hovering and a fist
@@ -650,4 +908,153 @@ fn esc_ends_a_pen_path_and_keeps_it() {
     assert!(!path.subpaths[0].closed, "left open");
     assert_eq!(path.subpaths[0].knots.len(), 3);
     assert_eq!(h.state().ui.selected_path.as_deref(), Some("work"));
+}
+
+/// Esc with no active operation deselects (#2674), like ⌘D.
+#[test]
+fn escape_deselects_when_nothing_else_needs_cancelling() {
+    let mut h = harness();
+    h.state_mut().run("select.all", json!({})).unwrap();
+    h.run_steps(1);
+    assert!(h.state().session.active().unwrap().doc.selection.is_some());
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().session.active().unwrap().doc.selection.is_none(), "Esc deselects");
+    assert!(!h.state().ui.status_error, "no error: {}", h.state().ui.status);
+    // With nothing selected, Esc stays untouched (no history step, no error).
+    let steps = h.state().session.active().unwrap().history.entries().len();
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert_eq!(h.state().session.active().unwrap().history.entries().len(), steps, "no Deselect step");
+}
+
+/// The dialog owns Esc: it cancels the dialog and the selection stays.
+#[test]
+fn escape_with_a_dialog_open_cancels_the_dialog_not_the_selection() {
+    let mut h = harness();
+    h.state_mut().run("select.all", json!({})).unwrap();
+    open_dialog(&mut h);
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().ui.dialogs.is_empty(), "Esc cancelled the dialog");
+    assert!(h.state().session.active().unwrap().doc.selection.is_some(), "the selection stays");
+}
+
+/// The command palette owns Esc: it closes the palette and the selection stays.
+#[test]
+fn escape_with_the_palette_open_does_not_deselect() {
+    let mut h = harness();
+    h.state_mut().run("select.all", json!({})).unwrap();
+    h.state_mut().ui.palette_open = true;
+    h.run_steps(1);
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().session.active().unwrap().doc.selection.is_some(), "Esc belongs to the palette");
+}
+
+/// Targa Options owns Esc (it cancels the save), so the selection stays.
+#[test]
+fn escape_with_targa_options_open_does_not_deselect() {
+    let mut h = harness();
+    h.state_mut().run("select.all", json!({})).unwrap();
+    h.state_mut().save_as(Some("t.tga".into())).unwrap();
+    assert!(h.state().targa_options.is_some());
+    h.run_steps(1);
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().session.active().unwrap().doc.selection.is_some(), "Esc belongs to Targa Options");
+}
+
+/// How much of the 400 × 300 document is on screen: the visible document span on each axis,
+/// clipped to the image (0 when the image has left the view on that axis).
+fn visible_image(h: &Harness<'static, PhotocraftApp>) -> [f32; 2] {
+    let r = h.state().last_canvas_rect;
+    let (a, b) = (doc_at(h, r.min), doc_at(h, r.max));
+    [(b[0].min(400.0) - a[0].max(0.0)).max(0.0), (b[1].min(300.0) - a[1].max(0.0)).max(0.0)]
+}
+
+#[test]
+fn wheel_zoom_over_the_pasteboard_keeps_the_image_in_view() {
+    // #3720: zooming in with the pointer on the gray pasteboard anchored on the pointer, so a few
+    // notches pushed the image out of the window. The anchor is now the nearest point of the image.
+    for (zoom_with_wheel, m) in [(true, Modifiers::NONE), (false, Modifiers::ALT)] {
+        let mut h = harness();
+        h.state_mut().session.edit_prefs(|p| p.general.zoom_with_scroll_wheel = zoom_with_wheel);
+        let r = h.state().last_canvas_rect;
+        let p = pos2(r.left() + 20.0, r.top() + 20.0);
+        let d = doc_at(&h, p);
+        assert!(d[0] < 0.0 && d[1] < 0.0, "the pointer starts on the pasteboard: {d:?}");
+        h.hover_at(p);
+        h.run_steps(2);
+        let z0 = zoom(&h);
+        for _ in 0..20 {
+            wheel(&h, 1.0, m);
+            h.run_steps(3);
+        }
+        h.run_steps(20);
+        assert!(zoom(&h) > z0 * 5.0, "the notches zoomed in: {z0} -> {}", zoom(&h));
+        let v = visible_image(&h);
+        assert!(v[0] > 0.0 && v[1] > 0.0, "zoom_with_wheel {zoom_with_wheel}: the image left the view {v:?}");
+        // The image's corner nearest the pointer is the anchor: it stays where it was on screen.
+        let c = doc_at(&h, pos2(r.left() + 20.0, r.top() + 20.0));
+        assert!(c[0] < 0.0 && c[1] < 0.0, "still pasteboard under the pointer, the corner held: {c:?}");
+        // A pinch from there behaves the same.
+        h.event(egui::Event::Zoom(4.0));
+        h.run_steps(3);
+        let v = visible_image(&h);
+        assert!(v[0] > 0.0 && v[1] > 0.0, "pinch: the image left the view {v:?}");
+    }
+}
+
+#[test]
+fn wheel_zoom_over_the_image_still_anchors_on_the_pointer() {
+    let mut h = harness();
+    let r = h.state().last_canvas_rect;
+    let p = pos2(r.center().x - 150.0, r.center().y - 100.0);
+    h.hover_at(p);
+    h.run_steps(2);
+    let d0 = doc_at(&h, p);
+    assert!(d0[0] > 0.0 && d0[1] > 0.0);
+    for _ in 0..5 {
+        wheel(&h, 1.0, Modifiers::ALT);
+        h.run_steps(3);
+    }
+    h.run_steps(20);
+    let d1 = doc_at(&h, p);
+    assert!((d1[0] - d0[0]).abs() < 0.1 && (d1[1] - d0[1]).abs() < 0.1, "{d0:?} -> {d1:?}");
+}
+
+/// #4658: with the Move tool's Show Transform Controls, the band just outside the box shows the
+/// curved rotate arrow, not a plain pointer, and one drag from there rotates the layer.
+#[test]
+fn move_tool_controls_rotate_from_just_outside_the_box() {
+    let mut h = harness();
+    h.state_mut().run("shape.create", json!({"kind": "rect", "rect": [150, 100, 100, 100], "fill": "#ff0000"})).unwrap();
+    h.state_mut().ui.tool = crate::state::Tool::Move;
+    h.state_mut().ui.tool_options.move_show_transform = true;
+    h.run_steps(3);
+    let screen = |h: &Harness<'static, PhotocraftApp>, x: f32, y: f32| {
+        let v = &h.state().ui.views[0];
+        let c = h.state().last_canvas_rect.center();
+        pos2(c.x + (x - v.center[0]) * v.zoom, c.y + (y - v.center[1]) * v.zoom)
+    };
+    let zoom = h.state().ui.views[0].zoom;
+    // Just outside the top edge, a quarter of the way along: the rotation band.
+    let at = screen(&h, 175.0, 100.0) - vec2(0.0, 12.0);
+    h.hover_at(at);
+    h.run_steps(2);
+    assert_eq!(h.output().platform_output.cursor_icon, egui::CursorIcon::None, "the drawn rotate arrow replaces the pointer");
+    press(&mut h, at, true);
+    let centre = screen(&h, 200.0, 150.0);
+    // A quarter turn around the box's centre.
+    for k in 1..=10 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 10.0;
+        let (dx, dy) = (at.x - centre.x, at.y - centre.y);
+        let q = centre + vec2(dx * a.cos() - dy * a.sin(), dx * a.sin() + dy * a.cos());
+        h.hover_at(q);
+        h.run_steps(1);
+    }
+    let end = h.state().ui.transform.as_ref().map(|t| t.quad).expect("the drag opened Free Transform");
+    let tilt = (end[1][1] - end[0][1]).atan2(end[1][0] - end[0][0]).to_degrees();
+    assert!((tilt - 90.0).abs() < 8.0 || (tilt + 270.0).abs() < 8.0, "rotated about a quarter turn, got {tilt}° (zoom {zoom})");
 }

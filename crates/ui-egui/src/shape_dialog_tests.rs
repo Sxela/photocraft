@@ -99,12 +99,60 @@ fn drags_still_draw_and_tools_without_a_dialog_ignore_clicks() {
 }
 
 #[test]
+fn click_dialogs_and_drags_keep_complete_stroke_defaults() {
+    let style = crate::shape_stroke_ui::StrokeOptions {
+        align: photocraft_doc::StrokeAlign::Outside,
+        cap: photocraft_doc::LineCap::Square,
+        join: photocraft_doc::LineJoin::Bevel,
+        miter_limit: 7.0,
+        dashes: vec![3.0, 1.0, 0.0, 2.0],
+        dash_offset: -0.75,
+        opacity: 0.6,
+    };
+    for tool in [Tool::Rectangle, Tool::EllipseShape, Tool::Triangle, Tool::Polygon] {
+        for click in [false, true] {
+            let mut app = app();
+            app.ui.tool_options.stroke_width = 7.0;
+            app.ui.tool_options.shape_stroke = style.clone();
+            let history = app.session.active().unwrap().history.past_len();
+            press(&mut app, tool, [20.0, 30.0], if click { [20.0, 30.0] } else { [120.0, 130.0] });
+            if click {
+                let id = only_dialog(&app);
+                crate::dialogs::confirm(&mut app, id).unwrap();
+            } else {
+                assert!(app.ui.dialogs.is_empty());
+            }
+            let st = app.session.active().unwrap();
+            let LayerContent::Shape(sh) = &st.doc.layer(st.active_layer.unwrap()).unwrap().content else { panic!("expected shape") };
+            let stroke = sh.stroke.as_ref().unwrap();
+            assert_eq!(crate::shape_stroke_ui::StrokeOptions::from(stroke), style, "{tool:?}, click={click}");
+            assert_eq!(stroke.width, 7.0);
+            assert_eq!(st.history.past_len(), history + 1);
+        }
+    }
+}
+
+#[test]
 fn click_slop_scales_with_zoom() {
     let pts = |d: f64| vec![[10.0, 10.0, 1.0], [10.0 + d, 10.0, 1.0]];
     assert!(is_click([10.0, 10.0], &pts(2.0), 1.0));
     assert!(!is_click([10.0, 10.0], &pts(5.0), 1.0));
     assert!(!is_click([10.0, 10.0], &pts(2.0), 4.0), "2 document px at 400% is a drag");
     assert!(is_click([10.0, 10.0], &[], 0.0));
+}
+
+/// #4205: the click slop is in screen points, so on a 2x (HiDPI) display at 100 % a 2 pt jitter
+/// (4 device px = 4 document px) is still a click that opens Create Rectangle, not a tiny shape.
+#[test]
+fn a_click_with_jitter_opens_the_dialog_on_hidpi() {
+    let mut app = app();
+    app.ppp = 2.0;
+    let i = app.session.active_index().unwrap();
+    app.ui.views[i].zoom = 1.0;
+    let before = layers(&app);
+    press(&mut app, Tool::Rectangle, [20.0, 30.0], [24.0, 30.0]);
+    only_dialog(&app);
+    assert_eq!(layers(&app), before, "a jittery click draws nothing");
 }
 
 #[test]
