@@ -174,3 +174,9 @@ original for the selection blend, and the instance's memory), i.e. ~12 MiB per t
 - Panel / UI plug-ins, plug-ins that read other layers or documents, host callbacks (progress,
   cancel), plug-in-provided file formats.
 - Filter › Last Filter does not repeat plug-in runs yet.
+
+## ComfyUI workflow integration
+
+Native generation and masked/image edits use the separate host-side [ComfyUI integration](comfyui.md).
+It transfers assets through a local or remote ComfyUI API and checks workflow node/model availability.
+The WebAssembly filter ABI described above remains network-free.

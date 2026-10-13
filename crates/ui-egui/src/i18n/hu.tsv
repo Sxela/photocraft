@@ -4025,3 +4025,39 @@ cameraRaw	Yellow	Sárga
 	Loaded Camera Raw settings from {file}	Camera Raw-beállítások betöltve innen: {file}
 	Loaded Camera Raw settings from {file} ({n} not supported)	Camera Raw-beállítások betöltve innen: {file} ({n} nem támogatott)
 	Auto Add/Delete	Automatikus hozzáadás/törlés
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI generálás / szerkesztés…
+	ComfyUI Generate / Edit	ComfyUI generálás / szerkesztés
+	ComfyUI server	ComfyUI-kiszolgáló
+	Prompt	Utasítás
+	Negative prompt	Negatív utasítás
+	Checkpoint (blank uses workflow default)	Modellfájl (üresen a munkafolyamat alapértéke)
+	Steps	Lépések
+	Guidance	Irányítás
+	Edit strength	Szerkesztés erőssége
+	Width / Height	Szélesség / magasság
+	Custom model workflow	Egyéni modell-munkafolyamat
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Exportáljon API-formátumban a ComfyUI-ban. Kösse az utasítást, képet és maszkot a csomópontok bemeneteihez.
+	Load API Workflow…	API-munkafolyamat betöltése…
+	API workflow JSON	API-munkafolyamat JSON
+	Official ComfyUI workflows	Hivatalos ComfyUI-munkafolyamatok
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	A képek 8 bites sRGB PNG-ként kerülnek elküldésre. Az eredmények új rétegek lesznek.
+	Save Starter Workflow…	Kezdő munkafolyamat mentése…
+	Check Availability	Elérhetőség ellenőrzése
+	Generate / Edit	Generálás / szerkesztés
+	Select the area to edit in PhotoCraft first.	Először jelölje ki a szerkesztendő területet a PhotoCraftban.
+	Generate from text	Generálás szövegből
+	Edit image	Kép szerkesztése
+	Edit selection	Kijelölés szerkesztése
+	Setup	Beállítás
+	Model filenames (blank uses preset default)	Modellfájlnevek (üresen az előbeállítás alapértékei)
+	Diffusion model	Diffúziós modell
+	Text encoder	Szövegkódoló
+	Custom workflow overrides the model preset.	Az egyéni munkafolyamat felülírja a modell előbeállítását.
+	An active selection limits where the edit is applied.	Az aktív kijelölés korlátozza a szerkesztés területét.
+	Surrounding pixels	Környező képpontok
+	Maximum processing side	Legnagyobb feldolgozási oldal
+	Diffusers model folder	Diffusers-modell mappája
+	Context / processing (padding removed after edit)	Környezet / feldolgozás (a kitöltés szerkesztés után eltávolítva)
+	ControlNet	ControlNet

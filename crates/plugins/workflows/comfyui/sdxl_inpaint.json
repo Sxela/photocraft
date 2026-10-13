@@ -1,0 +1,695 @@
+{
+  "inpaint": {
+    "api": {
+      "1": {
+        "class_type": "DiffusersLoader",
+        "inputs": {
+          "model_path": "stable-diffusion-xl-1.0-inpainting-0.1"
+        }
+      },
+      "6": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "A watercolor landscape.",
+          "clip": [
+            "1",
+            1
+          ]
+        }
+      },
+      "7": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "",
+          "clip": [
+            "1",
+            1
+          ]
+        }
+      },
+      "20": {
+        "class_type": "LoadImage",
+        "inputs": {
+          "image": "photocraft-input.png"
+        }
+      },
+      "100": {
+        "class_type": "LoadImageMask",
+        "inputs": {
+          "image": "photocraft-mask.png",
+          "channel": "red"
+        }
+      },
+      "26": {
+        "class_type": "InpaintModelConditioning",
+        "inputs": {
+          "positive": [
+            "6",
+            0
+          ],
+          "negative": [
+            "7",
+            0
+          ],
+          "vae": [
+            "1",
+            2
+          ],
+          "pixels": [
+            "20",
+            0
+          ],
+          "mask": [
+            "100",
+            0
+          ],
+          "noise_mask": true
+        }
+      },
+      "3": {
+        "class_type": "KSampler",
+        "inputs": {
+          "model": [
+            "1",
+            0
+          ],
+          "positive": [
+            "26",
+            0
+          ],
+          "negative": [
+            "26",
+            1
+          ],
+          "latent_image": [
+            "26",
+            2
+          ],
+          "seed": 0,
+          "steps": 30,
+          "cfg": 7,
+          "sampler_name": "dpmpp_2m",
+          "scheduler": "karras",
+          "denoise": 0.99
+        }
+      },
+      "8": {
+        "class_type": "VAEDecode",
+        "inputs": {
+          "samples": [
+            "3",
+            0
+          ],
+          "vae": [
+            "1",
+            2
+          ]
+        }
+      },
+      "9": {
+        "class_type": "PreviewImage",
+        "inputs": {
+          "images": [
+            "8",
+            0
+          ]
+        }
+      }
+    },
+    "ui": {
+      "last_node_id": 100,
+      "last_link_id": 14,
+      "nodes": [
+        {
+          "id": 1,
+          "type": "DiffusersLoader",
+          "pos": [
+            0,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 0,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "MODEL",
+              "type": "MODEL",
+              "links": [
+                8
+              ]
+            },
+            {
+              "name": "CLIP",
+              "type": "CLIP",
+              "links": [
+                1,
+                2
+              ]
+            },
+            {
+              "name": "VAE",
+              "type": "VAE",
+              "links": [
+                5,
+                13
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "DiffusersLoader"
+          },
+          "widgets_values": [
+            "stable-diffusion-xl-1.0-inpainting-0.1"
+          ]
+        },
+        {
+          "id": 6,
+          "type": "CLIPTextEncode",
+          "pos": [
+            420,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 1,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "clip",
+              "type": "CLIP",
+              "link": 1
+            }
+          ],
+          "outputs": [
+            {
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "slot_index": 0,
+              "links": [
+                3
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "widgets_values": [
+            "A watercolor landscape."
+          ]
+        },
+        {
+          "id": 7,
+          "type": "CLIPTextEncode",
+          "pos": [
+            840,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 2,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "clip",
+              "type": "CLIP",
+              "link": 2
+            }
+          ],
+          "outputs": [
+            {
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "slot_index": 0,
+              "links": [
+                4
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "widgets_values": [
+            ""
+          ]
+        },
+        {
+          "id": 20,
+          "type": "LoadImage",
+          "pos": [
+            1260,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 3,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "links": [
+                6
+              ]
+            },
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": []
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "LoadImage"
+          },
+          "widgets_values": [
+            "photocraft-input.png",
+            "image"
+          ]
+        },
+        {
+          "id": 100,
+          "type": "LoadImageMask",
+          "pos": [
+            0,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 4,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": [
+                7
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "LoadImageMask"
+          },
+          "widgets_values": [
+            "photocraft-mask.png",
+            "red",
+            "image"
+          ]
+        },
+        {
+          "id": 26,
+          "type": "InpaintModelConditioning",
+          "pos": [
+            420,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 5,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "positive",
+              "type": "CONDITIONING",
+              "link": 3
+            },
+            {
+              "name": "negative",
+              "type": "CONDITIONING",
+              "link": 4
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": 5
+            },
+            {
+              "name": "pixels",
+              "type": "IMAGE",
+              "link": 6
+            },
+            {
+              "name": "mask",
+              "type": "MASK",
+              "link": 7
+            }
+          ],
+          "outputs": [
+            {
+              "name": "positive",
+              "type": "CONDITIONING",
+              "links": [
+                9
+              ]
+            },
+            {
+              "name": "negative",
+              "type": "CONDITIONING",
+              "links": [
+                10
+              ]
+            },
+            {
+              "name": "latent",
+              "type": "LATENT",
+              "links": [
+                11
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "InpaintModelConditioning"
+          },
+          "widgets_values": [
+            true
+          ]
+        },
+        {
+          "id": 3,
+          "type": "KSampler",
+          "pos": [
+            840,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 6,
+          "mode": 0,
+          "inputs": [
+            {
+              "localized_name": "model",
+              "name": "model",
+              "type": "MODEL",
+              "link": 8
+            },
+            {
+              "localized_name": "positive",
+              "name": "positive",
+              "type": "CONDITIONING",
+              "link": 9
+            },
+            {
+              "localized_name": "negative",
+              "name": "negative",
+              "type": "CONDITIONING",
+              "link": 10
+            },
+            {
+              "localized_name": "latent_image",
+              "name": "latent_image",
+              "type": "LATENT",
+              "link": 11
+            },
+            {
+              "localized_name": "seed",
+              "name": "seed",
+              "type": "INT",
+              "widget": {
+                "name": "seed"
+              },
+              "link": null
+            }
+          ],
+          "outputs": [
+            {
+              "localized_name": "LATENT",
+              "name": "LATENT",
+              "type": "LATENT",
+              "links": [
+                12
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "KSampler"
+          },
+          "widgets_values": [
+            0,
+            "fixed",
+            30,
+            7,
+            "dpmpp_2m",
+            "karras",
+            0.99
+          ]
+        },
+        {
+          "id": 8,
+          "type": "VAEDecode",
+          "pos": [
+            1260,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 7,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "samples",
+              "type": "LATENT",
+              "link": 12
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": 13
+            }
+          ],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "slot_index": 0,
+              "links": [
+                14
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "VAEDecode"
+          },
+          "widgets_values": []
+        },
+        {
+          "id": 9,
+          "type": "PreviewImage",
+          "pos": [
+            0,
+            780
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 8,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "images",
+              "type": "IMAGE",
+              "link": 14
+            }
+          ],
+          "outputs": [],
+          "properties": {
+            "Node name for S&R": "PreviewImage"
+          },
+          "widgets_values": []
+        }
+      ],
+      "links": [
+        [
+          1,
+          1,
+          1,
+          6,
+          0,
+          "CLIP"
+        ],
+        [
+          2,
+          1,
+          1,
+          7,
+          0,
+          "CLIP"
+        ],
+        [
+          3,
+          6,
+          0,
+          26,
+          0,
+          "CONDITIONING"
+        ],
+        [
+          4,
+          7,
+          0,
+          26,
+          1,
+          "CONDITIONING"
+        ],
+        [
+          5,
+          1,
+          2,
+          26,
+          2,
+          "VAE"
+        ],
+        [
+          6,
+          20,
+          0,
+          26,
+          3,
+          "IMAGE"
+        ],
+        [
+          7,
+          100,
+          0,
+          26,
+          4,
+          "MASK"
+        ],
+        [
+          8,
+          1,
+          0,
+          3,
+          0,
+          "MODEL"
+        ],
+        [
+          9,
+          26,
+          0,
+          3,
+          1,
+          "CONDITIONING"
+        ],
+        [
+          10,
+          26,
+          1,
+          3,
+          2,
+          "CONDITIONING"
+        ],
+        [
+          11,
+          26,
+          2,
+          3,
+          3,
+          "LATENT"
+        ],
+        [
+          12,
+          3,
+          0,
+          8,
+          0,
+          "LATENT"
+        ],
+        [
+          13,
+          1,
+          2,
+          8,
+          1,
+          "VAE"
+        ],
+        [
+          14,
+          8,
+          0,
+          9,
+          0,
+          "IMAGE"
+        ]
+      ],
+      "groups": [],
+      "config": {},
+      "extra": {},
+      "version": 0.4
+    },
+    "bindings": {
+      "checkpoint": {
+        "node": "1",
+        "input": "model_path",
+        "widget": 0
+      },
+      "prompt": {
+        "node": "6",
+        "input": "text",
+        "widget": 0
+      },
+      "negative": {
+        "node": "7",
+        "input": "text",
+        "widget": 0
+      },
+      "image": {
+        "node": "20",
+        "input": "image",
+        "widget": 0
+      },
+      "mask": {
+        "node": "100",
+        "input": "image",
+        "widget": 0
+      },
+      "seed": {
+        "node": "3",
+        "input": "seed",
+        "widget": 0
+      },
+      "steps": {
+        "node": "3",
+        "input": "steps",
+        "widget": 2
+      },
+      "cfg": {
+        "node": "3",
+        "input": "cfg",
+        "widget": 3
+      },
+      "denoise": {
+        "node": "3",
+        "input": "denoise",
+        "widget": 6
+      }
+    }
+  }
+}

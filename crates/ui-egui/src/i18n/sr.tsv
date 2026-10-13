@@ -4180,3 +4180,39 @@ shape	Appearance	Izgled
 	Import .GRD	Uvezi .GRD
 	Choose a gradient file (.grd).	Izaberite datoteku gradijenta (.grd).
 	Auto Add/Delete	Automatsko dodavanje/brisanje
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI generisanje / uređivanje…
+	ComfyUI Generate / Edit	ComfyUI generisanje / uređivanje
+	ComfyUI server	ComfyUI server
+	Prompt	Upit
+	Negative prompt	Negativni upit
+	Checkpoint (blank uses workflow default)	Datoteka modela (prazno koristi podrazumevanu vrednost toka rada)
+	Steps	Koraci
+	Guidance	Usmeravanje
+	Edit strength	Jačina uređivanja
+	Width / Height	Širina / visina
+	Custom model workflow	Prilagođeni tok rada modela
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Izvezite API format u ComfyUI. Povežite upit, sliku i masku sa ulazima čvorova.
+	Load API Workflow…	Učitaj API tok rada…
+	API workflow JSON	JSON API toka rada
+	Official ComfyUI workflows	Zvanični ComfyUI tokovi rada
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Slike se šalju kao 8-bitni sRGB PNG. Rezultati postaju novi slojevi.
+	Save Starter Workflow…	Sačuvaj početni tok rada…
+	Check Availability	Proveri dostupnost
+	Generate / Edit	Generiši / uredi
+	Select the area to edit in PhotoCraft first.	Prvo izaberite oblast za uređivanje u PhotoCraft-u.
+	Generate from text	Generiši iz teksta
+	Edit image	Uredi sliku
+	Edit selection	Uredi selekciju
+	Setup	Podešavanje
+	Model filenames (blank uses preset default)	Nazivi datoteka modela (prazno koristi podrazumevane vrednosti)
+	Diffusion model	Difuzioni model
+	Text encoder	Koder teksta
+	Custom workflow overrides the model preset.	Prilagođeni tok rada zamenjuje unapred podešeni model.
+	An active selection limits where the edit is applied.	Aktivna selekcija ograničava oblast uređivanja.
+	Surrounding pixels	Okolni pikseli
+	Maximum processing side	Maksimalna stranica obrade
+	Diffusers model folder	Fascikla Diffusers modela
+	Context / processing (padding removed after edit)	Okolina / obrada (dopuna se uklanja posle uređivanja)
+	ControlNet	ControlNet

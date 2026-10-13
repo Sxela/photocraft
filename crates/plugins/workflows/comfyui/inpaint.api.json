@@ -1,0 +1,109 @@
+{
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "29",
+        1
+      ],
+      "text": "teacup on pink tablecloth, Anime style"
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "29",
+        1
+      ],
+      "text": "watermark, text\n"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "inpaint_example_input_image.png"
+    }
+  },
+  "26": {
+    "class_type": "VAEEncodeForInpaint",
+    "inputs": {
+      "pixels": [
+        "20",
+        0
+      ],
+      "vae": [
+        "29",
+        2
+      ],
+      "mask": [
+        "100",
+        0
+      ],
+      "grow_mask_by": 6
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "29",
+        2
+      ]
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "29",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "26",
+        0
+      ],
+      "seed": 808369199502636,
+      "steps": 20,
+      "cfg": 8,
+      "sampler_name": "uni_pc_bh2",
+      "scheduler": "normal",
+      "denoise": 1
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "ComfyUI"
+    }
+  },
+  "29": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "512-inpainting-ema.safetensors"
+    }
+  },
+  "100": {
+    "class_type": "LoadImageMask",
+    "inputs": {
+      "image": "photocraft-mask.png",
+      "channel": "red"
+    }
+  }
+}

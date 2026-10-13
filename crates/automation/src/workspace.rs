@@ -370,6 +370,7 @@ fn command_uses_ambient_path(id: &str, params: &Value) -> bool {
         // With a `path` the file is written there; without one the bytes come back as `data`.
         "actions.save" | "swatches.export" => params.get("path").is_some(),
         "plugin.reload" => true,
+        "comfyui.workflow.save" => true,
         _ => false,
     }
 }
@@ -763,6 +764,7 @@ mod tests {
             ("plugin.reload", serde_json::json!({"path": "/outside/plugins"})),
             ("plugin.reload", serde_json::json!({})),
             ("plugin.install", serde_json::json!({"path": " "})),
+            ("comfyui.workflow.save", serde_json::json!({"mode":"text2image","path":"/outside/workflow.json"})),
             ("swatches.import", serde_json::json!({"path": "/outside/set.aco"})),
             ("swatches.export", serde_json::json!({"path": "/outside/set.ase"})),
             ("actions.load", serde_json::json!({"path": "/outside/set.atn"})),
@@ -774,6 +776,7 @@ mod tests {
             ("brush.presets.importAbr", serde_json::json!({"data": "QUJD"})),
             ("gradient.presets.importGrd", serde_json::json!({"data": "QUJD"})),
             ("plugin.install", serde_json::json!({"data": "QUJD"})),
+            ("comfyui.workflow", serde_json::json!({"mode":"text2image"})),
             ("swatches.import", serde_json::json!({"data": "QUJD"})),
             ("swatches.export", serde_json::json!({"format": "ase"})),
             ("actions.load", serde_json::json!({"data": "QUJD"})),

@@ -21,6 +21,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod apply;
+/// Host-side ComfyUI workflow integration, separate from the network-free filter ABI.
+pub mod comfyui;
 pub mod manifest;
 pub mod registry;
 mod runtime;

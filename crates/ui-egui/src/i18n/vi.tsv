@@ -3590,3 +3590,39 @@ curves	Smooth	Làm mượt
 	Import .GRD	Nhập .GRD
 	Choose a gradient file (.grd).	Chọn tệp chuyển sắc (.grd).
 	Auto Add/Delete	Tự động thêm/xóa
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI tạo / chỉnh sửa…
+	ComfyUI Generate / Edit	ComfyUI tạo / chỉnh sửa
+	ComfyUI server	Máy chủ ComfyUI
+	Prompt	Lời nhắc
+	Negative prompt	Lời nhắc phủ định
+	Checkpoint (blank uses workflow default)	Tệp mô hình (để trống dùng mặc định của quy trình)
+	Steps	Số bước
+	Guidance	Mức hướng dẫn
+	Edit strength	Cường độ chỉnh sửa
+	Width / Height	Chiều rộng / chiều cao
+	Custom model workflow	Quy trình mô hình tùy chỉnh
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Xuất định dạng API trong ComfyUI. Liên kết lời nhắc, ảnh và mặt nạ với đầu vào của nút.
+	Load API Workflow…	Tải quy trình API…
+	API workflow JSON	JSON quy trình API
+	Official ComfyUI workflows	Quy trình ComfyUI chính thức
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Ảnh được gửi dưới dạng PNG sRGB 8 bit. Kết quả trở thành các lớp mới.
+	Save Starter Workflow…	Lưu quy trình mẫu…
+	Check Availability	Kiểm tra khả dụng
+	Generate / Edit	Tạo / chỉnh sửa
+	Select the area to edit in PhotoCraft first.	Trước tiên chọn vùng cần chỉnh sửa trong PhotoCraft.
+	Generate from text	Tạo từ văn bản
+	Edit image	Chỉnh sửa ảnh
+	Edit selection	Chỉnh sửa vùng chọn
+	Setup	Thiết lập
+	Model filenames (blank uses preset default)	Tên tệp mô hình (để trống dùng mặc định của thiết lập sẵn)
+	Diffusion model	Mô hình khuếch tán
+	Text encoder	Bộ mã hóa văn bản
+	Custom workflow overrides the model preset.	Quy trình tùy chỉnh thay thế thiết lập sẵn của mô hình.
+	An active selection limits where the edit is applied.	Vùng chọn hiện tại giới hạn nơi áp dụng chỉnh sửa.
+	Surrounding pixels	Điểm ảnh xung quanh
+	Maximum processing side	Cạnh xử lý tối đa
+	Diffusers model folder	Thư mục mô hình Diffusers
+	Context / processing (padding removed after edit)	Vùng xung quanh / xử lý (loại bỏ phần đệm sau chỉnh sửa)
+	ControlNet	ControlNet

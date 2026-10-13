@@ -3275,3 +3275,39 @@ curves	Smooth	매끄럽게
 	Step {step} is waiting for its dialog	{step}단계가 대화 상자를 기다리고 있습니다
 @plural	{n} action|{n} actions	액션 {n}개
 	Auto Add/Delete	자동 추가/삭제
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI 생성 / 편집…
+	ComfyUI Generate / Edit	ComfyUI 생성 / 편집
+	ComfyUI server	ComfyUI 서버
+	Prompt	프롬프트
+	Negative prompt	네거티브 프롬프트
+	Checkpoint (blank uses workflow default)	체크포인트 (비워 두면 워크플로 기본값 사용)
+	Steps	단계
+	Guidance	가이던스
+	Edit strength	편집 강도
+	Width / Height	너비 / 높이
+	Custom model workflow	사용자 지정 모델 워크플로
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	ComfyUI에서 API 형식으로 내보내세요. 프롬프트, 이미지, 마스크를 노드 입력에 연결합니다.
+	Load API Workflow…	API 워크플로 불러오기…
+	API workflow JSON	API 워크플로 JSON
+	Official ComfyUI workflows	ComfyUI 공식 워크플로
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	이미지는 8비트 sRGB PNG로 전송됩니다. 결과는 새 레이어로 추가됩니다.
+	Save Starter Workflow…	시작 워크플로 저장…
+	Check Availability	사용 가능 여부 확인
+	Generate / Edit	생성 / 편집
+	Select the area to edit in PhotoCraft first.	먼저 PhotoCraft에서 편집할 영역을 선택하세요.
+	Generate from text	텍스트로 생성
+	Edit image	이미지 편집
+	Edit selection	선택 영역 편집
+	Setup	설정
+	Model filenames (blank uses preset default)	모델 파일 이름 (비워 두면 기본값 사용)
+	Diffusion model	확산 모델
+	Text encoder	텍스트 인코더
+	Custom workflow overrides the model preset.	사용자 지정 워크플로가 모델 프리셋보다 우선합니다.
+	An active selection limits where the edit is applied.	?? ??? ??? ?? ???? ?? ??? ?????.
+	Surrounding pixels	주변 픽셀
+	Maximum processing side	최대 처리 변 길이
+	Diffusers model folder	Diffusers 모델 폴더
+	Context / processing (padding removed after edit)	주변 영역 / 처리 크기 (편집 후 패딩 제거)
+	ControlNet	ControlNet

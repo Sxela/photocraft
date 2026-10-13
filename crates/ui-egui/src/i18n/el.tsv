@@ -3802,3 +3802,39 @@ curves	Smooth	Εξομάλυνση
 	Step {step} is waiting for its dialog	Το βήμα {step} περιμένει το παράθυρο διαλόγου του
 @plural	{n} action|{n} actions	{n} ενέργεια|{n} ενέργειες
 	Auto Add/Delete	Αυτόματη προσθήκη/διαγραφή
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Δημιουργία / Επεξεργασία…
+	ComfyUI Generate / Edit	ComfyUI Δημιουργία / Επεξεργασία
+	ComfyUI server	Διακομιστής ComfyUI
+	Prompt	Προτροπή
+	Negative prompt	Αρνητική προτροπή
+	Checkpoint (blank uses workflow default)	Checkpoint (κενό χρησιμοποιεί την προεπιλογή της ροής)
+	Steps	Βήματα
+	Guidance	Καθοδήγηση
+	Edit strength	Ένταση επεξεργασίας
+	Width / Height	Πλάτος / Ύψος
+	Custom model workflow	Ροή εργασίας προσαρμοσμένου μοντέλου
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Εξαγάγετε μορφή API στο ComfyUI. Συνδέστε την προτροπή, την εικόνα και τη μάσκα με τις εισόδους κόμβων.
+	Load API Workflow…	Φόρτωση ροής API…
+	API workflow JSON	JSON ροής API
+	Official ComfyUI workflows	Επίσημες ροές εργασίας ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Οι εικόνες αποστέλλονται ως PNG sRGB 8 bit. Τα αποτελέσματα γίνονται νέες στρώσεις.
+	Save Starter Workflow…	Αποθήκευση αρχικής ροής…
+	Check Availability	Έλεγχος διαθεσιμότητας
+	Generate / Edit	Δημιουργία / Επεξεργασία
+	Select the area to edit in PhotoCraft first.	Επιλέξτε πρώτα την περιοχή επεξεργασίας στο PhotoCraft.
+	Generate from text	Δημιουργία από κείμενο
+	Edit image	Επεξεργασία εικόνας
+	Edit selection	Επεξεργασία επιλογής
+	Setup	Ρύθμιση
+	Model filenames (blank uses preset default)	Ονόματα αρχείων μοντέλων (κενό για προεπιλογή)
+	Diffusion model	Μοντέλο διάχυσης
+	Text encoder	Κωδικοποιητής κειμένου
+	Custom workflow overrides the model preset.	Η προσαρμοσμένη ροή αντικαθιστά την προεπιλογή μοντέλου.
+	An active selection limits where the edit is applied.	? ?????? ??????? ?????????? ??? ??????????? ? ???????????.
+	Surrounding pixels	Γειτονικά εικονοστοιχεία
+	Maximum processing side	Μέγιστη διάσταση επεξεργασίας
+	Diffusers model folder	Φάκελος μοντέλου Diffusers
+	Context / processing (padding removed after edit)	Περιβάλλον / επεξεργασία (το περιθώριο αφαιρείται μετά την επεξεργασία)
+	ControlNet	ControlNet

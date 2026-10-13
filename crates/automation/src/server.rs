@@ -324,7 +324,9 @@ pub struct UiSetParams {
     /// dashes, dashOffset and opacity; null disables the stroke). Shape stroke fields use
     /// `shape.edit` names and units; colour comes from `tools.setColors`. camTransformOnDrop (bool,
     /// the Content-Aware Move tool's Transform On Drop). tileGrid (bool, a developer overlay of the
-    /// active layer's storage tiles). Other fields are an error.
+    /// active layer's storage tiles). comfyui (an object patching open, tab, endpoint, mode, preset, model_files, prompt,
+    /// negative, checkpoint, seed, steps, cfg, denoise, width, height, context_margin,
+    /// max_size, workflow and bindings). Other fields are an error.
     pub fields: Value,
 }
 

@@ -23,6 +23,7 @@ wasmi = { version = "2.0.0", default-features = false, features = ["std", "valid
 # Bands run in parallel on native; wasm builds stay single-threaded.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 
 [dev-dependencies]
 # WebAssembly text -> binary for the hostile-module fixtures (Apache-2.0 WITH LLVM-exception).

@@ -669,7 +669,7 @@ pub fn status_progress(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 /// [`DIALOG_DELAY_MS`]; Esc cancels (see [`tick`]).
 pub fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
     let Some(j) = app.session.active_job() else { return };
-    if j.elapsed_ms < DIALOG_DELAY_MS {
+    if crate::comfyui_ui::handles_job(&j.command) || j.elapsed_ms < DIALOG_DELAY_MS {
         return;
     }
     let t = Tokens::get(ctx);
@@ -704,6 +704,25 @@ pub fn dialog(app: &mut PhotocraftApp, ctx: &egui::Context) {
     if cancel_it {
         cancel(app, j.id);
     }
+}
+
+/// Progress inside a tool window. Cancellation follows the same path as the status bar.
+pub(crate) fn inline_progress(ui: &mut egui::Ui, job: &JobInfo) -> bool {
+    let t = Tokens::get(ui.ctx());
+    ui.separator();
+    ui.horizontal(|ui| {
+        ui.spinner();
+        ui.label(if job.message.is_empty() { tl!("Working…").to_string() } else { job.message.clone() });
+    });
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 8.0), Sense::hover());
+    bar(ui, rect, shown_fraction(job), &t);
+    let mut cancel_it = false;
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(percent(job)).color(t.text_dim));
+        ui.label(RichText::new(elapsed(job.elapsed_ms)).color(t.text_dim));
+        cancel_it = ui.button(tl!("Cancel")).clicked();
+    });
+    cancel_it
 }
 
 fn elapsed(ms: f64) -> String {

@@ -3715,3 +3715,39 @@ curves	Smooth	スムーズ
 	Step {step} is waiting for its dialog	ステップ {step} はダイアログを待っています
 @plural	{n} action|{n} actions	アクション {n} 個
 	Auto Add/Delete	自動追加・削除
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI 生成 / 編集…
+	ComfyUI Generate / Edit	ComfyUI 生成 / 編集
+	ComfyUI server	ComfyUI サーバー
+	Prompt	プロンプト
+	Negative prompt	ネガティブプロンプト
+	Checkpoint (blank uses workflow default)	チェックポイント（空欄ならワークフローの既定値）
+	Steps	ステップ数
+	Guidance	ガイダンス
+	Edit strength	編集の強度
+	Width / Height	幅 / 高さ
+	Custom model workflow	カスタムモデルのワークフロー
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	ComfyUI で API 形式をエクスポートしてください。プロンプト、画像、マスクをノード入力に割り当てます。
+	Load API Workflow…	API ワークフローを読み込む…
+	API workflow JSON	API ワークフローの JSON
+	Official ComfyUI workflows	ComfyUI の公式ワークフロー
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	画像は 8 ビット sRGB PNG で送信されます。結果は新しいレイヤーになります。
+	Save Starter Workflow…	開始用ワークフローを保存…
+	Check Availability	利用可能か確認
+	Generate / Edit	生成 / 編集
+	Select the area to edit in PhotoCraft first.	まず PhotoCraft で編集する範囲を選択してください。
+	Generate from text	テキストから生成
+	Edit image	画像を編集
+	Edit selection	選択範囲を編集
+	Setup	設定
+	Model filenames (blank uses preset default)	モデルファイル名（空欄で既定値を使用）
+	Diffusion model	拡散モデル
+	Text encoder	テキストエンコーダー
+	Custom workflow overrides the model preset.	カスタムワークフローがモデルプリセットより優先されます。
+	An active selection limits where the edit is applied.	?????????????????????????????
+	Surrounding pixels	周囲のピクセル
+	Maximum processing side	処理サイズの最大辺
+	Diffusers model folder	Diffusersモデルのフォルダー
+	Context / processing (padding removed after edit)	周囲 / 処理サイズ（編集後に余白を削除）
+	ControlNet	ControlNet

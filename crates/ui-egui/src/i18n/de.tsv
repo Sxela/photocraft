@@ -2745,3 +2745,40 @@ curves	Smooth	Glätten
 	Step {step} is waiting for its dialog	Schritt {step} wartet auf seinen Dialog
 @plural	{n} action|{n} actions	{n} Aktion|{n} Aktionen
 	Auto Add/Delete	Autom. hinzuf./löschen
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Generieren / Bearbeiten…
+	ComfyUI Generate / Edit	ComfyUI Generieren / Bearbeiten
+	ComfyUI server	ComfyUI-Server
+	Prompt	Prompt
+	Negative prompt	Negativer Prompt
+	Checkpoint (blank uses workflow default)	Checkpoint (leer verwendet den Workflow-Standard)
+	Steps	Schritte
+	Guidance	Steuerungsstärke
+	Edit strength	Bearbeitungsstärke
+	Width / Height	Breite / Höhe
+	Custom model workflow	Workflow für ein eigenes Modell
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	API-Format in ComfyUI exportieren. Prompt, Bild und Maske mit Knoteneingaben verknüpfen.
+	Load API Workflow…	API-Workflow laden…
+	API workflow JSON	API-Workflow-JSON
+	Official ComfyUI workflows	Offizielle ComfyUI-Workflows
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Bilder werden als 8-Bit-sRGB-PNG gesendet. Ergebnisse werden als neue Ebenen eingefügt.
+	Save Starter Workflow…	Start-Workflow speichern…
+	Check Availability	Verfügbarkeit prüfen
+	Generate / Edit	Generieren / Bearbeiten
+	Select the area to edit in PhotoCraft first.	Zuerst den zu bearbeitenden Bereich in PhotoCraft auswählen.
+	Generate from text	Aus Text generieren
+	Edit image	Bild bearbeiten
+	Edit selection	Auswahl bearbeiten
+	Seed	Zufallsstartwert
+	Setup	Einrichtung
+	Model filenames (blank uses preset default)	Modelldateinamen (leer verwendet Vorgaben)
+	Diffusion model	Diffusionsmodell
+	Text encoder	Textencoder
+	Custom workflow overrides the model preset.	Eigener Workflow ersetzt die Modellvorgabe.
+	An active selection limits where the edit is applied.	Eine aktive Auswahl begrenzt den Bereich der Bearbeitung.
+	Surrounding pixels	Umgebende Pixel
+	Maximum processing side	Maximale Verarbeitungsgröße
+	Diffusers model folder	Diffusers-Modellordner
+	Context / processing (padding removed after edit)	Kontext / Verarbeitung (Auffüllung wird nach der Bearbeitung entfernt)
+	ControlNet	ControlNet

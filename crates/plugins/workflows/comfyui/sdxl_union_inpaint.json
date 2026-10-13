@@ -1,0 +1,1069 @@
+{
+  "inpaint": {
+    "api": {
+      "1": {
+        "class_type": "CheckpointLoaderSimple",
+        "inputs": {
+          "ckpt_name": "sd_xl_base_1.0.safetensors"
+        }
+      },
+      "6": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "A watercolor landscape.",
+          "clip": [
+            "1",
+            1
+          ]
+        }
+      },
+      "7": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "text, watermark",
+          "clip": [
+            "1",
+            1
+          ]
+        }
+      },
+      "20": {
+        "class_type": "LoadImage",
+        "inputs": {
+          "image": "photocraft-input.png"
+        }
+      },
+      "100": {
+        "class_type": "LoadImageMask",
+        "inputs": {
+          "image": "photocraft-mask.png",
+          "channel": "red"
+        }
+      },
+      "21": {
+        "class_type": "EmptyImage",
+        "inputs": {
+          "width": 1024,
+          "height": 1024,
+          "batch_size": 1,
+          "color": 0
+        }
+      },
+      "22": {
+        "class_type": "ImageCompositeMasked",
+        "inputs": {
+          "destination": [
+            "20",
+            0
+          ],
+          "source": [
+            "21",
+            0
+          ],
+          "mask": [
+            "101",
+            0
+          ],
+          "x": 0,
+          "y": 0,
+          "resize_source": false
+        }
+      },
+      "23": {
+        "class_type": "ControlNetLoader",
+        "inputs": {
+          "control_net_name": "diffusion_pytorch_model_promax.safetensors"
+        }
+      },
+      "24": {
+        "class_type": "ControlNetApplyAdvanced",
+        "inputs": {
+          "positive": [
+            "6",
+            0
+          ],
+          "negative": [
+            "7",
+            0
+          ],
+          "control_net": [
+            "26",
+            0
+          ],
+          "image": [
+            "22",
+            0
+          ],
+          "strength": 0.75,
+          "start_percent": 0.0,
+          "end_percent": 1.0
+        }
+      },
+      "25": {
+        "class_type": "VAEEncodeForInpaint",
+        "inputs": {
+          "pixels": [
+            "22",
+            0
+          ],
+          "vae": [
+            "1",
+            2
+          ],
+          "mask": [
+            "101",
+            0
+          ],
+          "grow_mask_by": 6
+        }
+      },
+      "3": {
+        "class_type": "KSampler",
+        "inputs": {
+          "model": [
+            "1",
+            0
+          ],
+          "positive": [
+            "24",
+            0
+          ],
+          "negative": [
+            "24",
+            1
+          ],
+          "latent_image": [
+            "25",
+            0
+          ],
+          "seed": 0,
+          "steps": 25,
+          "cfg": 4.5,
+          "sampler_name": "dpm_2",
+          "scheduler": "karras",
+          "denoise": 1.0
+        }
+      },
+      "8": {
+        "class_type": "VAEDecode",
+        "inputs": {
+          "samples": [
+            "3",
+            0
+          ],
+          "vae": [
+            "1",
+            2
+          ]
+        }
+      },
+      "9": {
+        "class_type": "PreviewImage",
+        "inputs": {
+          "images": [
+            "8",
+            0
+          ]
+        }
+      },
+      "101": {
+        "class_type": "ThresholdMask",
+        "inputs": {
+          "mask": [
+            "100",
+            0
+          ],
+          "value": 0.0
+        }
+      },
+      "26": {
+        "class_type": "SetUnionControlNetType",
+        "inputs": {
+          "control_net": [
+            "23",
+            0
+          ],
+          "type": "repaint"
+        }
+      }
+    },
+    "ui": {
+      "last_node_id": 101,
+      "last_link_id": 21,
+      "nodes": [
+        {
+          "id": 1,
+          "type": "CheckpointLoaderSimple",
+          "pos": [
+            0,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 0,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "MODEL",
+              "type": "MODEL",
+              "links": [
+                13
+              ]
+            },
+            {
+              "name": "CLIP",
+              "type": "CLIP",
+              "links": [
+                1,
+                2
+              ]
+            },
+            {
+              "name": "VAE",
+              "type": "VAE",
+              "links": [
+                11,
+                18
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CheckpointLoaderSimple"
+          },
+          "widgets_values": [
+            "sd_xl_base_1.0.safetensors"
+          ]
+        },
+        {
+          "id": 6,
+          "type": "CLIPTextEncode",
+          "pos": [
+            420,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 1,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "clip",
+              "type": "CLIP",
+              "link": 1
+            }
+          ],
+          "outputs": [
+            {
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "slot_index": 0,
+              "links": [
+                6
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "widgets_values": [
+            "A watercolor landscape."
+          ]
+        },
+        {
+          "id": 7,
+          "type": "CLIPTextEncode",
+          "pos": [
+            840,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 2,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "clip",
+              "type": "CLIP",
+              "link": 2
+            }
+          ],
+          "outputs": [
+            {
+              "name": "CONDITIONING",
+              "type": "CONDITIONING",
+              "slot_index": 0,
+              "links": [
+                7
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "widgets_values": [
+            "text, watermark"
+          ]
+        },
+        {
+          "id": 20,
+          "type": "LoadImage",
+          "pos": [
+            1260,
+            0
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 3,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "links": [
+                3
+              ]
+            },
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": []
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "LoadImage"
+          },
+          "widgets_values": [
+            "photocraft-input.png",
+            "image"
+          ]
+        },
+        {
+          "id": 100,
+          "type": "LoadImageMask",
+          "pos": [
+            0,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 4,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": [
+                20
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "LoadImageMask"
+          },
+          "widgets_values": [
+            "photocraft-mask.png",
+            "red",
+            "image"
+          ]
+        },
+        {
+          "id": 21,
+          "type": "EmptyImage",
+          "pos": [
+            420,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 5,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "links": [
+                4
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "EmptyImage"
+          },
+          "widgets_values": [
+            1024,
+            1024,
+            1,
+            0
+          ]
+        },
+        {
+          "id": 22,
+          "type": "ImageCompositeMasked",
+          "pos": [
+            840,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 6,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "destination",
+              "type": "IMAGE",
+              "link": 3
+            },
+            {
+              "name": "source",
+              "type": "IMAGE",
+              "link": 4
+            },
+            {
+              "name": "mask",
+              "type": "MASK",
+              "link": 5
+            }
+          ],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "links": [
+                9,
+                10
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "ImageCompositeMasked"
+          },
+          "widgets_values": [
+            0,
+            0,
+            false
+          ]
+        },
+        {
+          "id": 23,
+          "type": "ControlNetLoader",
+          "pos": [
+            1260,
+            390
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 7,
+          "mode": 0,
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "CONTROL_NET",
+              "type": "CONTROL_NET",
+              "links": [
+                21
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "ControlNetLoader"
+          },
+          "widgets_values": [
+            "diffusion_pytorch_model_promax.safetensors"
+          ]
+        },
+        {
+          "id": 24,
+          "type": "ControlNetApplyAdvanced",
+          "pos": [
+            0,
+            780
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 8,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "positive",
+              "type": "CONDITIONING",
+              "link": 6
+            },
+            {
+              "name": "negative",
+              "type": "CONDITIONING",
+              "link": 7
+            },
+            {
+              "name": "control_net",
+              "type": "CONTROL_NET",
+              "link": 8
+            },
+            {
+              "name": "image",
+              "type": "IMAGE",
+              "link": 9
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": null
+            }
+          ],
+          "outputs": [
+            {
+              "name": "positive",
+              "type": "CONDITIONING",
+              "links": [
+                14
+              ]
+            },
+            {
+              "name": "negative",
+              "type": "CONDITIONING",
+              "links": [
+                15
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "ControlNetApplyAdvanced"
+          },
+          "widgets_values": [
+            0.75,
+            0.0,
+            1.0
+          ]
+        },
+        {
+          "id": 25,
+          "type": "VAEEncodeForInpaint",
+          "pos": [
+            420,
+            780
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 9,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "pixels",
+              "type": "IMAGE",
+              "link": 10
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": 11
+            },
+            {
+              "name": "mask",
+              "type": "MASK",
+              "link": 12
+            }
+          ],
+          "outputs": [
+            {
+              "name": "LATENT",
+              "type": "LATENT",
+              "links": [
+                16
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "VAEEncodeForInpaint"
+          },
+          "widgets_values": [
+            6
+          ]
+        },
+        {
+          "id": 3,
+          "type": "KSampler",
+          "pos": [
+            840,
+            780
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 10,
+          "mode": 0,
+          "inputs": [
+            {
+              "localized_name": "model",
+              "name": "model",
+              "type": "MODEL",
+              "link": 13
+            },
+            {
+              "localized_name": "positive",
+              "name": "positive",
+              "type": "CONDITIONING",
+              "link": 14
+            },
+            {
+              "localized_name": "negative",
+              "name": "negative",
+              "type": "CONDITIONING",
+              "link": 15
+            },
+            {
+              "localized_name": "latent_image",
+              "name": "latent_image",
+              "type": "LATENT",
+              "link": 16
+            },
+            {
+              "localized_name": "seed",
+              "name": "seed",
+              "type": "INT",
+              "widget": {
+                "name": "seed"
+              },
+              "link": null
+            }
+          ],
+          "outputs": [
+            {
+              "localized_name": "LATENT",
+              "name": "LATENT",
+              "type": "LATENT",
+              "links": [
+                17
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "KSampler"
+          },
+          "widgets_values": [
+            0,
+            "fixed",
+            25,
+            4.5,
+            "dpm_2",
+            "karras",
+            1.0
+          ]
+        },
+        {
+          "id": 8,
+          "type": "VAEDecode",
+          "pos": [
+            1260,
+            780
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 11,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "samples",
+              "type": "LATENT",
+              "link": 17
+            },
+            {
+              "name": "vae",
+              "type": "VAE",
+              "link": 18
+            }
+          ],
+          "outputs": [
+            {
+              "name": "IMAGE",
+              "type": "IMAGE",
+              "slot_index": 0,
+              "links": [
+                19
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "VAEDecode"
+          },
+          "widgets_values": []
+        },
+        {
+          "id": 9,
+          "type": "PreviewImage",
+          "pos": [
+            0,
+            1170
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 12,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "images",
+              "type": "IMAGE",
+              "link": 19
+            }
+          ],
+          "outputs": [],
+          "properties": {
+            "Node name for S&R": "PreviewImage"
+          },
+          "widgets_values": []
+        },
+        {
+          "id": 101,
+          "type": "ThresholdMask",
+          "pos": [
+            420,
+            1170
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 13,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "mask",
+              "type": "MASK",
+              "link": 20
+            }
+          ],
+          "outputs": [
+            {
+              "name": "MASK",
+              "type": "MASK",
+              "links": [
+                5,
+                12
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "ThresholdMask"
+          },
+          "widgets_values": [
+            0.0
+          ]
+        },
+        {
+          "id": 26,
+          "type": "SetUnionControlNetType",
+          "pos": [
+            840,
+            1170
+          ],
+          "size": [
+            360,
+            320
+          ],
+          "flags": {},
+          "order": 14,
+          "mode": 0,
+          "inputs": [
+            {
+              "name": "control_net",
+              "type": "CONTROL_NET",
+              "link": 21
+            }
+          ],
+          "outputs": [
+            {
+              "name": "CONTROL_NET",
+              "type": "CONTROL_NET",
+              "links": [
+                8
+              ]
+            }
+          ],
+          "properties": {
+            "Node name for S&R": "SetUnionControlNetType"
+          },
+          "widgets_values": [
+            "repaint"
+          ]
+        }
+      ],
+      "links": [
+        [
+          1,
+          1,
+          1,
+          6,
+          0,
+          "CLIP"
+        ],
+        [
+          2,
+          1,
+          1,
+          7,
+          0,
+          "CLIP"
+        ],
+        [
+          3,
+          20,
+          0,
+          22,
+          0,
+          "IMAGE"
+        ],
+        [
+          4,
+          21,
+          0,
+          22,
+          1,
+          "IMAGE"
+        ],
+        [
+          5,
+          101,
+          0,
+          22,
+          2,
+          "MASK"
+        ],
+        [
+          6,
+          6,
+          0,
+          24,
+          0,
+          "CONDITIONING"
+        ],
+        [
+          7,
+          7,
+          0,
+          24,
+          1,
+          "CONDITIONING"
+        ],
+        [
+          8,
+          26,
+          0,
+          24,
+          2,
+          "CONTROL_NET"
+        ],
+        [
+          9,
+          22,
+          0,
+          24,
+          3,
+          "IMAGE"
+        ],
+        [
+          10,
+          22,
+          0,
+          25,
+          0,
+          "IMAGE"
+        ],
+        [
+          11,
+          1,
+          2,
+          25,
+          1,
+          "VAE"
+        ],
+        [
+          12,
+          101,
+          0,
+          25,
+          2,
+          "MASK"
+        ],
+        [
+          13,
+          1,
+          0,
+          3,
+          0,
+          "MODEL"
+        ],
+        [
+          14,
+          24,
+          0,
+          3,
+          1,
+          "CONDITIONING"
+        ],
+        [
+          15,
+          24,
+          1,
+          3,
+          2,
+          "CONDITIONING"
+        ],
+        [
+          16,
+          25,
+          0,
+          3,
+          3,
+          "LATENT"
+        ],
+        [
+          17,
+          3,
+          0,
+          8,
+          0,
+          "LATENT"
+        ],
+        [
+          18,
+          1,
+          2,
+          8,
+          1,
+          "VAE"
+        ],
+        [
+          19,
+          8,
+          0,
+          9,
+          0,
+          "IMAGE"
+        ],
+        [
+          20,
+          100,
+          0,
+          101,
+          0,
+          "MASK"
+        ],
+        [
+          21,
+          23,
+          0,
+          26,
+          0,
+          "CONTROL_NET"
+        ]
+      ],
+      "groups": [],
+      "config": {},
+      "extra": {},
+      "version": 0.4
+    },
+    "bindings": {
+      "checkpoint": {
+        "node": "1",
+        "input": "ckpt_name",
+        "widget": 0
+      },
+      "controlnet": {
+        "node": "23",
+        "input": "control_net_name",
+        "widget": 0
+      },
+      "prompt": {
+        "node": "6",
+        "input": "text",
+        "widget": 0
+      },
+      "negative": {
+        "node": "7",
+        "input": "text",
+        "widget": 0
+      },
+      "image": {
+        "node": "20",
+        "input": "image",
+        "widget": 0
+      },
+      "mask": {
+        "node": "100",
+        "input": "image",
+        "widget": 0
+      },
+      "seed": {
+        "node": "3",
+        "input": "seed",
+        "widget": 0
+      },
+      "steps": {
+        "node": "3",
+        "input": "steps",
+        "widget": 2
+      },
+      "cfg": {
+        "node": "3",
+        "input": "cfg",
+        "widget": 3
+      },
+      "denoise": {
+        "node": "3",
+        "input": "denoise",
+        "widget": 6
+      },
+      "width": {
+        "node": "21",
+        "input": "width",
+        "widget": 0
+      },
+      "height": {
+        "node": "21",
+        "input": "height",
+        "widget": 1
+      }
+    }
+  }
+}

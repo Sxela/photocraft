@@ -625,6 +625,20 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let controls_end = {
                     let ui = &mut group_ui;
                     ui.spacing_mut().item_spacing.x = 6.0;
+                    // Keep image generation one click away, including with no document open.
+                    // Reserve it before optional title-bar controls on narrow windows.
+                    if ui.available_width() >= 28.0 {
+                        let button = if ui.available_width() >= 90.0 {
+                            egui::Button::image_and_text(icons::image("wand-sparkles", 14.0, t.text_dim), "ComfyUI")
+                        } else {
+                            egui::Button::image(icons::image("wand-sparkles", 14.0, t.text_dim))
+                        };
+                        let response = ui.add(button.selected(app.ui.comfyui.open)).on_hover_text(tl!("ComfyUI Generate / Edit…"));
+                        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "ComfyUI"));
+                        if response.clicked() {
+                            let _ = crate::menus::invoke(app, ui.ctx(), "window.comfyui", json!({}));
+                        }
+                    }
                     let mut ws = app.ui.workspace.clone();
                     let opts = [
                         // Keys stay English (`apply_workspace` matches them); the dropdown

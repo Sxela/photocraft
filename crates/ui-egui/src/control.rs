@@ -131,7 +131,8 @@ pub enum Outcome {
 /// field's value is validated before the first one is applied, so a typo, an unknown field, a
 /// bad value or a bad nested key can't reply with success while nothing — or only half of it —
 /// changed (#412).
-pub const UI_SET_FIELDS: [&str; 35] = [
+pub const UI_SET_FIELDS: [&str; 36] = [
+    "comfyui",
     "tool",
     "panels",
     "dock",
@@ -534,6 +535,17 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 };
                 // The Crop tool's gear menu: Show Cropped Area and the shield (#1919).
                 let crop_shield = merged_object(&app.ui.tool_options.crop_shield, p.get("cropShield"), "cropShield")?;
+                let comfyui = if let Some(patch) = p.get("comfyui") {
+                    let mut baseline = app.ui.comfyui.clone();
+                    if let Some(id) = patch.get("preset").and_then(Value::as_str)
+                        && id != baseline.preset
+                    {
+                        baseline.select_preset(id)?;
+                    }
+                    merged_object(&baseline, Some(patch), "comfyui")?
+                } else {
+                    None
+                };
                 if crop_shield.as_ref().is_some_and(|s| !(0.0..=100.0).contains(&s.opacity)) {
                     return Err("cropShield.opacity must be 0..100".into());
                 }
@@ -683,6 +695,10 @@ fn dispatch(app: &mut PhotocraftApp, ctx: &egui::Context, req: &ControlRequest) 
                 }
                 if let Some(s) = crop_shield {
                     app.ui.tool_options.crop_shield = s;
+                }
+                if let Some(state) = comfyui {
+                    app.ui.comfyui = state;
+                    crate::comfyui_ui::remember(app);
                 }
                 if let Some(v) = panels {
                     app.ui.panels = v;
@@ -1246,6 +1262,7 @@ pub fn inspect(app: &PhotocraftApp, ctx: &egui::Context) -> Value {
         "window": {"width": screen.width(), "height": screen.height(), "pixelsPerPoint": ctx.pixels_per_point()},
         "tool": app.ui.tool,
         "toolOptions": app.ui.tool_options,
+        "comfyui": app.ui.comfyui,
         "perspectiveCrop": app.ui.perspective_crop,
         "strokeEditor": app.ui.stroke_editor,
         "magnetic": app.ui.magnetic,
@@ -1875,6 +1892,32 @@ mod tests {
         let bad = call(&mut app, &ctx, "ui.set", json!({"gradientBlendMode": "nonsense", "gradientClassic": false}));
         assert_eq!(bad["ok"], false, "{bad}");
         assert!(app.ui.tool_options.gradient_classic, "invalid mode must not change options");
+    }
+
+    #[test]
+    fn ui_set_comfyui_roundtrips_window_state_and_rejects_unknown_fields() {
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        let ctx = egui::Context::default();
+        let good = call(&mut app, &ctx, "ui.set", json!({"comfyui":{"open":true,"mode":"inpaint","prompt":"test"}}));
+        assert_eq!(good["ok"], true, "{good}");
+        assert!(app.ui.comfyui.open);
+        assert_eq!(inspect(&app, &ctx)["comfyui"]["prompt"], "test");
+        let before = app.ui.comfyui.clone();
+        let bad = call(&mut app, &ctx, "ui.set", json!({"comfyui":{"unknown":true}}));
+        assert_eq!(bad["ok"], false);
+        assert_eq!(app.ui.comfyui, before);
+        let model = call(&mut app, &ctx, "ui.set", json!({"comfyui":{"preset":"flux2_klein_4b"}}));
+        assert_eq!(model["ok"], true);
+        assert_eq!(app.ui.comfyui.mode, "img2img");
+        assert_eq!(app.ui.comfyui.steps, 4);
+        assert_eq!(app.ui.comfyui.cfg, 1.0);
+        let overrides = call(&mut app, &ctx, "ui.set", json!({"comfyui":{"preset":"qwen_edit_2511","steps":12}}));
+        assert_eq!(overrides["ok"], true);
+        assert_eq!(app.ui.comfyui.steps, 12);
+        let before = app.ui.comfyui.clone();
+        let bad = call(&mut app, &ctx, "ui.set", json!({"comfyui":{"preset":"unknown"}}));
+        assert_eq!(bad["ok"], false);
+        assert_eq!(app.ui.comfyui, before);
     }
 
     #[test]

@@ -3050,3 +3050,40 @@ curves	Smooth	Сгладить
 	Step {step} is waiting for its dialog	Шаг {step} ожидает своего диалога
 @plural	{n} action|{n} actions	{n} операция|{n} операции|{n} операций
 	Auto Add/Delete	Автодобавление/удаление
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Генерация / Редактирование…
+	ComfyUI Generate / Edit	ComfyUI Генерация / Редактирование
+	ComfyUI server	Сервер ComfyUI
+	Prompt	Промпт
+	Negative prompt	Негативный промпт
+	Checkpoint (blank uses workflow default)	Чекпойнт (пустое поле — значение из workflow)
+	Steps	Шаги
+	Guidance	Сила следования промпту
+	Edit strength	Сила редактирования
+	Width / Height	Ширина / Высота
+	Custom model workflow	Workflow для своей модели
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Экспортируйте формат API в ComfyUI. Привяжите промпт, изображение и маску ко входам узлов.
+	Load API Workflow…	Загрузить API workflow…
+	API workflow JSON	JSON API workflow
+	Official ComfyUI workflows	Официальные workflow ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Изображения отправляются как 8-битные PNG sRGB. Результаты добавляются на новые слои.
+	Save Starter Workflow…	Сохранить начальный workflow…
+	Check Availability	Проверить доступность
+	Generate / Edit	Генерация / Редактирование
+	Select the area to edit in PhotoCraft first.	Сначала выделите область для редактирования в PhotoCraft.
+	Generate from text	Генерация по тексту
+	Edit image	Редактировать изображение
+	Edit selection	Редактировать выделение
+	Seed	Зерно
+	Setup	Настройка
+	Model filenames (blank uses preset default)	Файлы моделей (пусто — значения по умолчанию)
+	Diffusion model	Диффузионная модель
+	Text encoder	Текстовый энкодер
+	Custom workflow overrides the model preset.	Пользовательский процесс заменяет предустановку модели.
+	An active selection limits where the edit is applied.	???????? ????????? ???????????? ??????? ?????????? ??????.
+	Surrounding pixels	Окружающие пиксели
+	Maximum processing side	Максимальный размер обработки
+	Diffusers model folder	Папка модели Diffusers
+	Context / processing (padding removed after edit)	Контекст / обработка (поля удаляются после редактирования)
+	ControlNet	ControlNet

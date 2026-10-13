@@ -3837,3 +3837,39 @@ cameraData	Lens	Lens
 	Loaded Camera Raw settings from {file}	Camera Raw ayarları {file} dosyasından yüklendi
 	Loaded Camera Raw settings from {file} ({n} not supported)	Camera Raw ayarları {file} dosyasından yüklendi ({n} desteklenmiyor)
 	Auto Add/Delete	Otomatik Ekle/Sil
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI oluştur / düzenle…
+	ComfyUI Generate / Edit	ComfyUI oluştur / düzenle
+	ComfyUI server	ComfyUI sunucusu
+	Prompt	İstem
+	Negative prompt	Negatif istem
+	Checkpoint (blank uses workflow default)	Model dosyası (boşsa iş akışının varsayılanını kullanır)
+	Steps	Adımlar
+	Guidance	Yönlendirme
+	Edit strength	Düzenleme gücü
+	Width / Height	Genişlik / yükseklik
+	Custom model workflow	Özel model iş akışı
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	ComfyUI içinde API biçiminde dışa aktarın. İstemi, görüntüyü ve maskeyi düğüm girişlerine bağlayın.
+	Load API Workflow…	API iş akışı yükle…
+	API workflow JSON	API iş akışı JSON
+	Official ComfyUI workflows	Resmî ComfyUI iş akışları
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Görüntüler 8 bit sRGB PNG olarak gönderilir. Sonuçlar yeni katmanlar olur.
+	Save Starter Workflow…	Başlangıç iş akışını kaydet…
+	Check Availability	Kullanılabilirliği denetle
+	Generate / Edit	Oluştur / düzenle
+	Select the area to edit in PhotoCraft first.	Önce PhotoCraft içinde düzenlenecek alanı seçin.
+	Generate from text	Metinden oluştur
+	Edit image	Görüntüyü düzenle
+	Edit selection	Seçimi düzenle
+	Setup	Kurulum
+	Model filenames (blank uses preset default)	Model dosya adları (boşsa ön ayarın varsayılanını kullanır)
+	Diffusion model	Difüzyon modeli
+	Text encoder	Metin kodlayıcı
+	Custom workflow overrides the model preset.	Özel iş akışı model ön ayarını geçersiz kılar.
+	An active selection limits where the edit is applied.	Etkin seçim düzenlemenin uygulanacağı alanı sınırlar.
+	Surrounding pixels	Çevredeki pikseller
+	Maximum processing side	En büyük işleme kenarı
+	Diffusers model folder	Diffusers model klasörü
+	Context / processing (padding removed after edit)	Çevre / işleme (dolgu düzenlemeden sonra kaldırılır)
+	ControlNet	ControlNet

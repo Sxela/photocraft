@@ -2786,3 +2786,39 @@ curves	Smooth	Suavizar
 	Step {step} is waiting for its dialog	El paso {step} está esperando su cuadro de diálogo
 @plural	{n} action|{n} actions	{n} acción|{n} acciones
 	Auto Add/Delete	Añadir/eliminar automáticamente
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Generar / Editar…
+	ComfyUI Generate / Edit	ComfyUI Generar / Editar
+	ComfyUI server	Servidor ComfyUI
+	Prompt	Instrucción
+	Negative prompt	Instrucción negativa
+	Checkpoint (blank uses workflow default)	Punto de control (vacío usa el predeterminado del flujo)
+	Steps	Pasos
+	Guidance	Guía
+	Edit strength	Intensidad de edición
+	Width / Height	Anchura / Altura
+	Custom model workflow	Flujo de trabajo de modelo personalizado
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Exporte el formato API en ComfyUI. Vincule la instrucción, la imagen y la máscara a las entradas de los nodos.
+	Load API Workflow…	Cargar flujo API…
+	API workflow JSON	JSON del flujo API
+	Official ComfyUI workflows	Flujos oficiales de ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	Las imágenes se envían como PNG sRGB de 8 bits. Los resultados se añaden como capas nuevas.
+	Save Starter Workflow…	Guardar flujo inicial…
+	Check Availability	Comprobar disponibilidad
+	Generate / Edit	Generar / Editar
+	Select the area to edit in PhotoCraft first.	Primero seleccione el área que desea editar en PhotoCraft.
+	Generate from text	Generar desde texto
+	Edit image	Editar imagen
+	Edit selection	Editar selección
+	Setup	Configuración
+	Model filenames (blank uses preset default)	Archivos de modelo (vacío usa valores predeterminados)
+	Diffusion model	Modelo de difusión
+	Text encoder	Codificador de texto
+	Custom workflow overrides the model preset.	El flujo personalizado reemplaza el modelo predefinido.
+	An active selection limits where the edit is applied.	Una selecci?n activa limita d?nde se aplica la edici?n.
+	Surrounding pixels	Píxeles circundantes
+	Maximum processing side	Dimensión máxima de procesamiento
+	Diffusers model folder	Carpeta del modelo Diffusers
+	Context / processing (padding removed after edit)	Contexto / procesamiento (el relleno se elimina tras editar)
+	ControlNet	ControlNet

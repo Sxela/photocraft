@@ -2710,3 +2710,40 @@ curves	Smooth	平滑
 	Step {step} is waiting for its dialog	步骤 {step} 正在等待其对话框
 @plural	{n} action|{n} actions	{n} 个动作
 	Auto Add/Delete	自动添加/删除
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI 生成 / 编辑…
+	ComfyUI Generate / Edit	ComfyUI 生成 / 编辑
+	ComfyUI server	ComfyUI 服务器
+	Prompt	提示词
+	Negative prompt	负面提示词
+	Checkpoint (blank uses workflow default)	检查点（留空使用工作流默认值）
+	Steps	步数
+	Guidance	引导强度
+	Edit strength	编辑强度
+	Width / Height	宽度 / 高度
+	Custom model workflow	自定义模型工作流
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	在 ComfyUI 中导出 API 格式。将提示词、图像和蒙版绑定到节点输入。
+	Load API Workflow…	加载 API 工作流…
+	API workflow JSON	API 工作流 JSON
+	Official ComfyUI workflows	ComfyUI 官方工作流
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	图像以 8 位 sRGB PNG 发送。结果将成为新图层。
+	Save Starter Workflow…	保存入门工作流…
+	Check Availability	检查可用性
+	Generate / Edit	生成 / 编辑
+	Select the area to edit in PhotoCraft first.	请先在 PhotoCraft 中选择要编辑的区域。
+	Generate from text	从文本生成
+	Edit image	编辑图像
+	Edit selection	编辑选区
+	Seed	随机种子
+	Setup	设置
+	Model filenames (blank uses preset default)	模型文件名（留空使用预设默认值）
+	Diffusion model	扩散模型
+	Text encoder	文本编码器
+	Custom workflow overrides the model preset.	自定义工作流覆盖模型预设。
+	An active selection limits where the edit is applied.	???????????????????
+	Surrounding pixels	周围像素
+	Maximum processing side	最大处理边长
+	Diffusers model folder	Diffusers 模型文件夹
+	Context / processing (padding removed after edit)	上下文 / 处理尺寸（编辑后移除填充）
+	ControlNet	ControlNet

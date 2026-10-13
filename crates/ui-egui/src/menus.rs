@@ -21,6 +21,7 @@ pub const TOP_MENUS: [&str; 10] = ["File", "Edit", "Image", "Layer", "Type", "Se
 
 /// UI-level commands (handled by the shell rather than the engine): id, label, menu, shortcut.
 pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("window.comfyui", "ComfyUI Generate / Edit…", &["Window"], None),
     ("ui.symmetryTransform", "Transform Symmetry", &[], None),
     // Right-click the options bar's tool icon (#2825); `tool.resetAll` asks first.
     ("tool.reset", "Reset Tool", &[], None),
@@ -222,6 +223,9 @@ pub(crate) fn invoke_unguarded(app: &mut PhotocraftApp, ctx: &egui::Context, id:
     }
     // Filter › Plug-ins (installed WebAssembly plug-ins, Install Plug-in…).
     if let Some(r) = crate::plugin_ui::menu(app, id, &params) {
+        return r;
+    }
+    if let Some(r) = crate::comfyui_ui::menu(app, id) {
         return r;
     }
     if id == "window.panel.brushes" {
@@ -723,7 +727,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> bool {
             app.session.active().is_some() && app.services.export.is_some()
         }
         i if i.starts_with("window.toggle.") => true,
-        "window.togglePanels" => true,
+        "window.togglePanels" | "window.comfyui" => true,
         // With one document open the key stays quiet, as in Photoshop, rather than reporting why.
         "window.nextDocument" | "window.previousDocument" => app.session.active().is_some(),
         i if panel_alias(i).is_some() || workspace_name(i).is_some() => true,
@@ -848,6 +852,7 @@ fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
         "window.toggle.toolbar" => p.toolbar,
         "window.toggle.dock" => p.dock,
         "window.togglePanels" => p.toolbar || p.options_bar || p.dock,
+        "window.comfyui" => app.ui.comfyui.open,
         "window.toggle.options" => p.options_bar,
         "window.toggle.brushSettings" => p.brush_settings,
         _ => return None,

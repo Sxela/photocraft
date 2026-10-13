@@ -3894,3 +3894,39 @@ layerLabel	No Color	Sem cor
 	Step {step} is waiting for its dialog	A etapa {step} está aguardando sua caixa de diálogo
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
+
+# ComfyUI workflow integration
+	ComfyUI Generate / Edit…	ComfyUI Gerar / Editar…
+	ComfyUI Generate / Edit	ComfyUI Gerar / Editar
+	ComfyUI server	Servidor ComfyUI
+	Prompt	Prompt
+	Negative prompt	Prompt negativo
+	Checkpoint (blank uses workflow default)	Checkpoint (vazio usa o padrão do fluxo)
+	Steps	Etapas
+	Guidance	Orientação
+	Edit strength	Intensidade de edição
+	Width / Height	Largura / Altura
+	Custom model workflow	Fluxo de trabalho de modelo personalizado
+	Export API format in ComfyUI. Bind prompt, image and mask to node inputs.	Exporte o formato API no ComfyUI. Vincule o prompt, a imagem e a máscara às entradas dos nós.
+	Load API Workflow…	Carregar fluxo API…
+	API workflow JSON	JSON do fluxo API
+	Official ComfyUI workflows	Fluxos oficiais do ComfyUI
+	Images are sent as 8-bit sRGB PNG. Results become new layers.	As imagens são enviadas como PNG sRGB de 8 bits. Os resultados viram novas camadas.
+	Save Starter Workflow…	Salvar fluxo inicial…
+	Check Availability	Verificar disponibilidade
+	Generate / Edit	Gerar / Editar
+	Select the area to edit in PhotoCraft first.	Primeiro selecione a área a editar no PhotoCraft.
+	Generate from text	Gerar a partir de texto
+	Edit image	Editar imagem
+	Edit selection	Editar seleção
+	Setup	Configuração
+	Model filenames (blank uses preset default)	Arquivos dos modelos (vazio usa os padrões)
+	Diffusion model	Modelo de difusão
+	Text encoder	Codificador de texto
+	Custom workflow overrides the model preset.	O fluxo personalizado substitui o modelo predefinido.
+	An active selection limits where the edit is applied.	Uma sele??o ativa limita onde a edi??o ? aplicada.
+	Surrounding pixels	Pixels ao redor
+	Maximum processing side	Dimensão máxima de processamento
+	Diffusers model folder	Pasta do modelo Diffusers
+	Context / processing (padding removed after edit)	Contexto / processamento (o preenchimento é removido após a edição)
+	ControlNet	ControlNet
